@@ -319,6 +319,9 @@ func TestAdd_WritesAProfileWithoutHandEditing(t *testing.T) {
 	if code != exitOK {
 		t.Fatalf("second add exit = %d: %s", code, errOut)
 	}
+	if !strings.Contains(out, "github-work") {
+		t.Errorf("add did not report the inferred alias for work:\n%s", out)
+	}
 
 	data := readFile(t, filepath.Join(home, ".config", "ghprofile", "profiles.yaml"))
 	for _, want := range []string{"name: personal", "name: work", "alias: github-work", "~/.ssh/id_ed25519_work", "default: true"} {

@@ -76,9 +76,12 @@ func WriteAtomic(path string, data []byte, mode fs.FileMode) error {
 	}
 	tmpName := tmp.Name()
 
+	// Best effort cleanup. On the success path the file has already been
+	// renamed away, so both of these are expected to fail and there is
+	// nothing useful to do about it either way.
 	defer func() {
-		tmp.Close()
-		os.Remove(tmpName)
+		_ = tmp.Close()
+		_ = os.Remove(tmpName)
 	}()
 
 	if _, err := tmp.Write(data); err != nil {

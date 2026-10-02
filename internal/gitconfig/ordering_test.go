@@ -145,7 +145,8 @@ func mustWrite(t *testing.T, path, content string) {
 
 func run(t *testing.T, home string, name string, args ...string) string {
 	t.Helper()
-	cmd := exec.Command(name, args...)
+	// CommandContext, so a hung git cannot outlive the test.
+	cmd := exec.CommandContext(t.Context(), name, args...)
 	cmd.Env = append(os.Environ(), "HOME="+home, "GIT_CONFIG_GLOBAL="+filepath.Join(home, ".gitconfig"))
 	out, err := cmd.CombinedOutput()
 	if err != nil {

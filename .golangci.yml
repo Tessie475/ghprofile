@@ -2,24 +2,56 @@ version: "2"
 
 linters:
   enable:
-    - errcheck      # unchecked errors
+    - errcheck
     - govet
     - ineffassign
     - staticcheck
     - unused
-    - errorlint     # correct use of %w and errors.Is/As
-    - gosec         # file permissions, command execution
+    - errorlint
+    - gosec
     - misspell
-    - revive        # style, exported-symbol doc comments
+    - revive
     - bodyclose
     - noctx
 
   settings:
+    errcheck:
+      # Writes to stdout and stderr. A CLI that checked every print would be
+      # unreadable, and there is nothing useful to do when stdout is a closed
+      # pipe except exit, which the shell already arranges.
+      exclude-functions:
+        - fmt.Fprint
+        - fmt.Fprintf
+        - fmt.Fprintln
+        - (*text/tabwriter.Writer).Write
+
+    gosec:
+      excludes:
+        # G304, G703: reading and writing a path held in a variable. That is
+        # this tool's entire job. Every path originates in the user's own
+        # profiles file and passes through config.ExpandPaths, which rejects
+        # anything that is not absolute or ~-rooted, including ~user forms.
+        - G304
+        - G703
+        # G204: running a subprocess with variable arguments. The tool has to
+        # exec ssh, git and ssh-keygen with the user's own aliases and paths.
+        # Aliases are validated to contain no whitespace and no shell or ssh
+        # wildcard characters, and nothing is passed through a shell.
+        - G204
+
     revive:
       rules:
         - name: exported
           arguments: ["checkPrivateReceivers"]
         - name: package-comments
+
+  exclusions:
+    rules:
+      # Test fixtures deliberately use loose permissions and exec helpers, and
+      # none of it ships.
+      - path: _test\.go
+        linters:
+          - gosec
 
 formatters:
   enable:

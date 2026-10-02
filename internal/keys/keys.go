@@ -92,7 +92,7 @@ func Fingerprint(pub []byte) (string, error) {
 	}
 	raw, err := base64.StdEncoding.DecodeString(fields[1])
 	if err != nil {
-		return "", fmt.Errorf("%w: %v", ErrMalformedPublicKey, err)
+		return "", fmt.Errorf("%w: %w", ErrMalformedPublicKey, err)
 	}
 	sum := sha256.Sum256(raw)
 	return "SHA256:" + base64.RawStdEncoding.EncodeToString(sum[:]), nil
