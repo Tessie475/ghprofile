@@ -7,7 +7,7 @@ Bug reports and patches are welcome.
 ```bash
 make check        # go vet + go test -race
 gofmt -l .        # must print nothing
-golangci-lint run # if you have it installed
+make lint         # installs the pinned version if you do not have it
 ```
 
 ## Working on it safely

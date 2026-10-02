@@ -24,9 +24,16 @@ cover: ## Run tests and open a coverage report
 vet: ## Run go vet
 	go vet $(PKG)
 
+GOLANGCI_LINT_VERSION := v2.14.0
+
 .PHONY: lint
-lint: ## Run golangci-lint
+lint: ## Run golangci-lint, same version as CI
+	@command -v golangci-lint >/dev/null || $(MAKE) lint-install
 	golangci-lint run
+
+.PHONY: lint-install
+lint-install: ## Install the pinned golangci-lint
+	go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@$(GOLANGCI_LINT_VERSION)
 
 .PHONY: check
 check: vet test ## Everything CI runs, minus lint
