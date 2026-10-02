@@ -1,0 +1,26 @@
+# Build output. Anchored with a leading slash so these patterns cannot match
+# cmd/ghprofile/, which an unanchored "ghprofile" silently did.
+/bin/
+/dist/
+/ghprofile
+
+# Private build notes: learning guides and machine-specific test procedures.
+# They reference a real employer and real addresses, so they stay local.
+/notes/
+
+# Go
+*.test
+*.out
+coverage.*
+
+# macOS
+.DS_Store
+
+# Never commit real keys or a real profiles file. Test fixtures under testdata
+# are explicitly allowed, since the tests cannot run without them.
+/profiles.yaml
+*.pem
+id_rsa*
+id_ed25519*
+id_ecdsa*
+!**/testdata/**

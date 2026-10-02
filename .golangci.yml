@@ -1,0 +1,31 @@
+version: "2"
+
+linters:
+  enable:
+    - errcheck      # unchecked errors
+    - govet
+    - ineffassign
+    - staticcheck
+    - unused
+    - errorlint     # correct use of %w and errors.Is/As
+    - gosec         # file permissions, command execution
+    - misspell
+    - revive        # style, exported-symbol doc comments
+    - bodyclose
+    - noctx
+
+  settings:
+    revive:
+      rules:
+        - name: exported
+          arguments: ["checkPrivateReceivers"]
+        - name: package-comments
+
+formatters:
+  enable:
+    - gofmt
+    - goimports
+
+issues:
+  max-issues-per-linter: 0
+  max-same-issues: 0

@@ -1,0 +1,92 @@
+# Builds release binaries for every platform on a tag push, so that nobody
+# needs Go installed to use this tool.
+#
+# Untested locally: run "goreleaser release --snapshot --clean" before you rely
+# on it, and "goreleaser check" to validate this file.
+version: 2
+
+project_name: ghprofile
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - main: ./cmd/ghprofile
+    binary: ghprofile
+    env:
+      - CGO_ENABLED=0
+    goos: [darwin, linux, windows]
+    goarch: [amd64, arm64]
+    ignore:
+      - goos: windows
+        goarch: arm64
+    ldflags:
+      - -s -w
+      - -X main.version={{ .Version }}
+      - -X main.commit={{ .ShortCommit }}
+      - -X main.date={{ .CommitDate }}
+    mod_timestamp: "{{ .CommitTimestamp }}"
+
+archives:
+  # install.sh builds URLs from this template, so changing it breaks the
+  # installer.
+  - name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    files:
+      - README.md
+      - LICENSE
+    format_overrides:
+      - goos: windows
+        format: zip
+
+checksum:
+  name_template: "{{ .ProjectName }}_{{ .Version }}_checksums.txt"
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
+      - "^chore:"
+
+release:
+  footer: |
+    ## Install
+
+    ```bash
+    curl -sSfL https://raw.githubusercontent.com/Tessie475/ghprofile/main/scripts/install.sh | sh
+    ```
+
+    Or download the archive for your platform below and verify it against
+    `checksums.txt`.
+
+# Homebrew. GoReleaser writes the formula into your tap on every release.
+#
+# One-time setup, before the first tag:
+#   1. Create a PUBLIC repository named exactly "homebrew-tap" under your
+#      account. It can be empty. The "homebrew-" prefix is what makes
+#      "brew tap Tessie475/tap" resolve to it.
+#   2. Create a fine-grained personal access token with Contents: read and
+#      write, scoped to that one repository.
+#   3. Add it to THIS repository as an Actions secret named HOMEBREW_TAP_TOKEN.
+#   4. Uncomment the HOMEBREW_TAP_TOKEN line in .github/workflows/release.yml.
+#
+# See docs/releasing.md for the whole sequence.
+brews:
+  - repository:
+      owner: Tessie475
+      name: homebrew-tap
+      branch: main
+      token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
+    directory: Formula
+    homepage: https://github.com/Tessie475/ghprofile
+    description: Use two GitHub accounts from one machine, in two commands
+    license: MIT
+    commit_author:
+      name: Tessie475
+      email: eberechichukwu1@gmail.com
+    install: |
+      bin.install "ghprofile"
+    test: |
+      assert_match "ghprofile", shell_output("#{bin}/ghprofile version")

@@ -1,0 +1,21 @@
+version: 1
+
+profiles:
+  - name: personal
+    host: github.com
+    alias: github-personal
+    key: ~/.ssh/personal_github
+    user:
+      name: A Person
+      email: tessie@example.com
+    default: true
+
+  - name: work
+    host: github.com
+    alias: github-work
+    key: ~/.ssh/id_ed25519_work
+    user:
+      name: A Person
+      email: work@example.org
+    dirs:
+      - ~/work/
