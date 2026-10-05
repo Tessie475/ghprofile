@@ -30,10 +30,6 @@ email. A key pasted into the wrong account authenticates anyway, so nothing look
 broken. None of it is re-runnable, so a new laptop means doing it again from
 memory.
 
-No existing tool covers the whole job. `gh auth switch` handles HTTPS tokens and
-never touches SSH. Git's `includeIf` solves per-directory identity, but you write
-it by hand. `gitsu` and friends only swap `user.name` and `user.email`.
-
 ## Install
 
 ### Homebrew
