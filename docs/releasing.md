@@ -2,7 +2,7 @@
 
 A tag starting with `v` triggers `.github/workflows/release.yml`, which runs the
 tests, builds every platform with GoReleaser, publishes a GitHub Release with
-checksums, and updates the Homebrew formula.
+checksums, and updates the Homebrew cask.
 
 ## One-time setup
 
@@ -15,7 +15,7 @@ resolve to it, so the name is not optional.
 ### 2. A token that can write to it
 
 The default `GITHUB_TOKEN` in a workflow cannot push to a different repository,
-so the formula update needs its own token.
+so the cask update needs its own token.
 
 Create a fine-grained personal access token with **Contents: read and write**,
 scoped to the `homebrew-tap` repository only. Add it to this repository as an
@@ -62,7 +62,7 @@ The version it prints comes from the tag through `-ldflags`, so if it says
 
 ## Getting into homebrew-core
 
-`brew install ghprofile` with no tap means a formula in homebrew-core, which has
+`brew install ghprofile` with no tap means being accepted into homebrew-core, which has
 a notability bar: the project has to be maintained, have stable releases, and
 show real use, roughly on the order of tens of stars or forks. A new repository
 will be turned down.

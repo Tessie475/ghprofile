@@ -37,7 +37,7 @@ archives:
       - LICENSE
     format_overrides:
       - goos: windows
-        format: zip
+        formats: [zip]
 
 checksum:
   name_template: "{{ .ProjectName }}_{{ .Version }}_checksums.txt"
@@ -61,32 +61,40 @@ release:
     Or download the archive for your platform below and verify it against
     `checksums.txt`.
 
-# Homebrew. GoReleaser writes the formula into your tap on every release.
+# Homebrew. GoReleaser writes the cask into your tap on every release.
+#
+# Casks, not formulae: "brews" is deprecated. The generated cask does carry
+# Linux URLs, but Homebrew on Linux does not officially support casks, so the
+# README points Linux users at the binary or scripts/install.sh.
 #
 # One-time setup, before the first tag:
 #   1. Create a PUBLIC repository named exactly "homebrew-tap" under your
 #      account. It can be empty. The "homebrew-" prefix is what makes
-#      "brew tap Tessie475/tap" resolve to it.
+#      "brew install Tessie475/tap/ghprofile" resolve to it.
 #   2. Create a fine-grained personal access token with Contents: read and
 #      write, scoped to that one repository.
 #   3. Add it to THIS repository as an Actions secret named HOMEBREW_TAP_TOKEN.
-#   4. Uncomment the HOMEBREW_TAP_TOKEN line in .github/workflows/release.yml.
 #
 # See docs/releasing.md for the whole sequence.
-brews:
-  - repository:
+homebrew_casks:
+  - name: ghprofile
+    repository:
       owner: Tessie475
       name: homebrew-tap
       branch: main
       token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
-    directory: Formula
     homepage: https://github.com/Tessie475/ghprofile
     description: Use two GitHub accounts from one machine, in two commands
     license: MIT
     commit_author:
       name: Tessie475
       email: eberechichukwu1@gmail.com
-    install: |
-      bin.install "ghprofile"
-    test: |
-      assert_match "ghprofile", shell_output("#{bin}/ghprofile version")
+    # macOS quarantines anything downloaded by a cask, and an unsigned binary
+    # then refuses to run with "the developer cannot be verified". This clears
+    # the attribute on install. From GoReleaser's own cask documentation.
+    hooks:
+      post:
+        install: |
+          if system_command("/usr/bin/xattr", args: ["-h"]).exit_status == 0
+            system_command "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "#{staged_path}/ghprofile"]
+          end
