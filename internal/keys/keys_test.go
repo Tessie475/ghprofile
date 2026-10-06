@@ -4,6 +4,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -160,5 +161,70 @@ func TestLooksPublic(t *testing.T) {
 	}
 	if LooksPublic([]byte("not a key at all\n")) {
 		t.Error("arbitrary text was reported as a public key")
+	}
+}
+
+// FIDO hardware keys. Their algorithm names start with sk-, so a check for
+// "ssh-" or "ecdsa-" alone misses exactly the keys that the most
+// security-conscious users carry.
+func TestLooksPublic_FIDOKeys(t *testing.T) {
+	tests := []struct {
+		name string
+		data string
+		want bool
+	}{
+		{
+			name: "sk-ssh-ed25519",
+			data: "sk-ssh-ed25519@openssh.com AAAAGnNrLXNzaC1lZDI1NTE5QDBwZW5zc2guY29tAAAA user@host\n",
+			want: true,
+		},
+		{
+			name: "sk-ecdsa-sha2-nistp256",
+			data: "sk-ecdsa-sha2-nistp256@openssh.com AAAAInNrLWVjZHNhLXNoYTItbmlzdHAyNTZAb3Bl user@host\n",
+			want: true,
+		},
+		{name: "ssh-ed25519", data: fixturePub, want: true},
+		{
+			name: "ssh-rsa",
+			data: "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABgQ user@host\n",
+			want: true,
+		},
+		{
+			name: "ecdsa-sha2-nistp256",
+			data: "ecdsa-sha2-nistp256 AAAAE2VjZHNhLXNoYTItbmlzdHAyNTY user@host\n",
+			want: true,
+		},
+		{
+			name: "a certificate is still a public key line",
+			data: "ssh-ed25519-cert-v01@openssh.com AAAAIHNzaC1lZDI1NTE5LWNlcnQ user@host\n",
+			want: true,
+		},
+		{name: "not a key", data: "hello there\n", want: false},
+		{
+			name: "a private key is never public, whatever it is named",
+			data: "-----BEGIN OPENSSH PRIVATE KEY-----\nb3Blbn\n",
+			want: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := LooksPublic([]byte(tt.data)); got != tt.want {
+				t.Errorf("LooksPublic() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+// Fingerprinting must work for a FIDO key too, since check prints it.
+func TestFingerprint_FIDOKey(t *testing.T) {
+	const pub = "sk-ssh-ed25519@openssh.com AAAAGnNrLXNzaC1lZDI1NTE5QDBwZW5zc2guY29tAAAA user@host\n"
+
+	got, err := Fingerprint([]byte(pub))
+	if err != nil {
+		t.Fatalf("Fingerprint() error = %v", err)
+	}
+	if !strings.HasPrefix(got, "SHA256:") {
+		t.Errorf("Fingerprint() = %q, want a SHA256: prefix", got)
 	}
 }

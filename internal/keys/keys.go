@@ -98,9 +98,24 @@ func Fingerprint(pub []byte) (string, error) {
 	return "SHA256:" + base64.RawStdEncoding.EncodeToString(sum[:]), nil
 }
 
-// Generate creates an ed25519 keypair at path with no passphrase.
-func Generate(ctx context.Context, path, comment string) error {
-	res, err := shell.Run(ctx, "ssh-keygen", "-t", "ed25519", "-f", path, "-C", comment, "-N", "")
+// Generate creates an ed25519 keypair at path.
+//
+// When prompt is false the key is written unencrypted, which is what makes
+// unattended use possible. When it is true, ssh-keygen runs with the terminal
+// attached and asks for a passphrase itself.
+//
+// The passphrase is never accepted as an argument. Anything in argv is visible
+// in the process list and, if typed, in shell history, which is a poor place
+// for the thing protecting a private key.
+func Generate(ctx context.Context, path, comment string, prompt bool) error {
+	args := []string{"-t", "ed25519", "-f", path, "-C", comment}
+
+	if prompt {
+		// No -N, so ssh-keygen prompts for and confirms the passphrase.
+		return shell.RunInteractive(ctx, "ssh-keygen", args...)
+	}
+
+	res, err := shell.Run(ctx, "ssh-keygen", append(args, "-N", "")...)
 	if err != nil {
 		return err
 	}
@@ -128,5 +143,24 @@ func LooksPublic(data []byte) bool {
 	if len(fields) < 2 || LooksPrivate(data) {
 		return false
 	}
-	return strings.HasPrefix(fields[0], "ssh-") || strings.HasPrefix(fields[0], "ecdsa-")
+	return isKeyType(fields[0])
+}
+
+// publicKeyTypes are the algorithm names OpenSSH writes at the start of a
+// public key. The sk- forms are FIDO hardware keys, which are exactly what
+// security-conscious users carry, so missing them would be a poor joke.
+var publicKeyTypes = []string{
+	"ssh-",
+	"ecdsa-",
+	"sk-ssh-",
+	"sk-ecdsa-",
+}
+
+func isKeyType(field string) bool {
+	for _, prefix := range publicKeyTypes {
+		if strings.HasPrefix(field, prefix) {
+			return true
+		}
+	}
+	return false
 }
