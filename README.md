@@ -182,7 +182,7 @@ touches a `Host` stanza no profile claims.
 | Command | What it does |
 |---|---|
 | `add <name>` | Adds an identity, inferring the alias, key path and commit name |
-| `apply` | Does everything: take over, keygen, config, key upload, checks |
+| `apply` | Does everything: take over, keygen, config, key upload, checks. `-passphrase` to encrypt generated keys |
 | `plan` | Shows what `apply` would change. `-check` exits 2 when changes are pending |
 | `check` | Inspects your setup offline and reports problems, fixing nothing |
 | `verify` | Asks each host which account its key reaches. Needs the network |
@@ -250,6 +250,41 @@ same way:
     dirs:
       - ~/clients/x/
 ```
+
+## Key passphrases
+
+By default a generated key is written **unencrypted**:
+
+```bash
+ghprofile apply
+```
+
+That is a deliberate trade, and worth understanding before you accept it.
+
+An unencrypted key means anything that can read the file can use the key. A
+passphrase means it cannot, but something has to supply that passphrase on every
+use, which is what the ssh agent is for.
+
+ghprofile writes `AddKeysToAgent yes` into every stanza, and `UseKeychain yes`
+on macOS, so a passphrase-protected key is unlocked once and then stored in the
+login keychain. In practice you are prompted once, ever. On Linux there is no
+keychain equivalent, so expect a prompt once per login session.
+
+Given that, a passphrase costs very little and is worth opting into:
+
+```bash
+ghprofile apply -passphrase
+```
+
+`ssh-keygen` then asks for the passphrase itself, with the terminal attached.
+ghprofile never accepts a passphrase as a flag value, because anything in a
+command's arguments is visible in the process list and, if you typed it, in your
+shell history. That is a poor place for the thing protecting a private key.
+
+It is opt-in rather than the default because the tool's whole purpose is making
+multi-account work unattended, and a key that cannot be used without a prompt
+breaks that for anyone without a keychain. If you are generating a key for CI or
+a server, leave it off deliberately rather than by accident.
 
 ## Plain URLs
 

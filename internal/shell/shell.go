@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"os/exec"
 	"runtime"
 	"strings"
@@ -84,4 +85,19 @@ func clipboardCommand() (string, []string, error) {
 		}
 	}
 	return "", nil, ErrNoCommand
+}
+
+// RunInteractive runs a command with the terminal attached, for tools that
+// prompt. Nothing is captured, because the point is that the user sees and
+// answers the prompt themselves.
+func RunInteractive(ctx context.Context, name string, args ...string) error {
+	cmd := exec.CommandContext(ctx, name, args...)
+	cmd.Stdin = os.Stdin
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("run %s: %w", name, err)
+	}
+	return nil
 }

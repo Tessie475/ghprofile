@@ -276,3 +276,51 @@ line you can state in one sentence, which `doctor` versus `verify` was not.
 `doctor` still dispatches to `check` but is left out of the help text, so anyone
 reaching for the convention lands somewhere sensible without the two names
 competing in the documentation.
+
+### Passphrases are opt-in, and never an argument
+
+`ssh-keygen -N ""` writes an unencrypted key, which is the default because the
+tool exists to make multi-account work unattended, and a key that prompts on
+every use breaks that for anyone without a keychain.
+
+`-passphrase` drops the `-N` and runs `ssh-keygen` through
+`shell.RunInteractive`, which attaches the terminal so ssh-keygen prompts and
+confirms the passphrase itself.
+
+There is deliberately no `-passphrase=<value>` form. Arguments are visible in
+the process list for the lifetime of the command and, if a human typed them, in
+shell history indefinitely. A flag that looks convenient and leaks the secret
+protecting a private key is worse than no flag.
+
+On macOS the cost of opting in is close to zero, because the stanzas already
+carry `AddKeysToAgent yes` and `UseKeychain yes`, so the passphrase is stored in
+the login keychain after first use. That asymmetry is why the flag exists rather
+than just a paragraph in the README saying the default is fine.
+
+### verify takes its ssh, clock and sleep as fields
+
+`SSH` and `Wait` used to call `shell.Run` and `time.Now` directly, which left no
+seam and no tests. Both sat at 0% coverage in the one package whose job is to
+tell a user whether their setup actually works. The worst failure this tool can
+have is confidently reporting a broken setup as fine, and nothing proved it did
+not.
+
+`Checker` holds the ssh invocation, the clock and the sleep as fields. The
+package-level `SSH` and `Wait` still exist and call `New()`, so no caller
+changed. Tests build a `Checker` whose runner replays canned `shell.Result`
+values and whose sleep advances a fake clock instead of waiting, which makes the
+retry tests instant while still exercising the real budget arithmetic.
+
+What that bought, specifically:
+
+- **Exit code 1 with a greeting is success.** GitHub exits 1 on a successful
+  `ssh -T`, so treating the code as the signal would report every working setup
+  as broken. That is now asserted, as is exit 1 *without* a greeting being a
+  failure.
+- The backoff doubles and caps at eight seconds.
+- The budget bounds the number of attempts.
+- Cancellation stops the loop.
+- A missing ssh binary fails immediately rather than being retried, since it
+  will not fix itself.
+- `BatchMode=yes` is still passed, which is what stops ssh blocking on a
+  passphrase prompt inside `apply`.

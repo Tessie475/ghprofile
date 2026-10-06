@@ -484,3 +484,213 @@ func TestVersion(t *testing.T) {
 		}
 	}
 }
+
+func TestRemove(t *testing.T) {
+	home := fakeHome(t)
+	writeProfiles(t, home)
+
+	// Give the profile an identity file, as apply would.
+	cfgDir := filepath.Join(home, ".config", "ghprofile")
+	identity := filepath.Join(cfgDir, "gitconfig-work")
+	if err := os.WriteFile(identity, []byte("[user]\n"), 0o600); err != nil {
+		t.Fatalf("setup: %v", err)
+	}
+
+	code, out, errOut := exec2(t, "remove", "work")
+	if code != exitOK {
+		t.Fatalf("remove exit = %d: %s", code, errOut)
+	}
+	if !strings.Contains(out, `removed "work"`) {
+		t.Errorf("remove did not report what it did:\n%s", out)
+	}
+
+	data := readFile(t, filepath.Join(cfgDir, "profiles.yaml"))
+	if strings.Contains(data, "name: work") {
+		t.Errorf("work survived removal:\n%s", data)
+	}
+	if strings.Contains(data, "name: personal") == false {
+		t.Errorf("personal was removed too:\n%s", data)
+	}
+	if _, err := os.Stat(identity); !os.IsNotExist(err) {
+		t.Error("the identity file was left behind")
+	}
+	// The key is the user's, not ours to delete.
+	if !strings.Contains(out, "its key is left at") {
+		t.Errorf("remove did not say the key was kept:\n%s", out)
+	}
+}
+
+// Something has to govern the global identity, so removing the default must
+// promote a survivor rather than leaving none.
+func TestRemove_PromotesANewDefault(t *testing.T) {
+	home := fakeHome(t)
+	writeProfiles(t, home)
+
+	code, out, errOut := exec2(t, "remove", "personal")
+	if code != exitOK {
+		t.Fatalf("remove exit = %d: %s", code, errOut)
+	}
+	if !strings.Contains(out, "is now") {
+		t.Errorf("remove did not report the promotion:\n%s", out)
+	}
+
+	data := readFile(t, filepath.Join(home, ".config", "ghprofile", "profiles.yaml"))
+	if !strings.Contains(data, "default: true") {
+		t.Errorf("no profile is default after removing the default:\n%s", data)
+	}
+}
+
+func TestRemove_Errors(t *testing.T) {
+	home := fakeHome(t)
+	writeProfiles(t, home)
+
+	if code, _, _ := exec2(t, "remove", "nope"); code != exitError {
+		t.Error("removing an unknown profile should fail")
+	}
+	if code, _, _ := exec2(t, "remove"); code != exitMisuse {
+		t.Error("remove with no argument should be a misuse")
+	}
+	_ = home
+}
+
+func TestAdopt(t *testing.T) {
+	home := fakeHome(t)
+	writeProfiles(t, home)
+
+	sshDir := filepath.Join(home, ".ssh")
+	if err := os.MkdirAll(sshDir, 0o700); err != nil {
+		t.Fatalf("setup: %v", err)
+	}
+	const handwritten = "# mine\nHost github-work\n  HostName github.com\n  IdentityFile ~/.ssh/id_work\n\nHost bastion\n  HostName b.example.com\n"
+	cfg := filepath.Join(sshDir, "config")
+	if err := os.WriteFile(cfg, []byte(handwritten), 0o600); err != nil {
+		t.Fatalf("setup: %v", err)
+	}
+
+	// Dry run must change nothing.
+	code, out, errOut := exec2(t, "adopt", "-dry-run")
+	if code != exitOK {
+		t.Fatalf("adopt -dry-run exit = %d: %s", code, errOut)
+	}
+	if !strings.Contains(out, "github-work") {
+		t.Errorf("dry run did not name the stanza:\n%s", out)
+	}
+	if readFile(t, cfg) != handwritten {
+		t.Error("dry run modified the config")
+	}
+
+	// For real.
+	if code, _, errOut = exec2(t, "adopt"); code != exitOK {
+		t.Fatalf("adopt exit = %d: %s", code, errOut)
+	}
+	after := readFile(t, cfg)
+	if strings.Contains(after, "Host github-work") {
+		t.Errorf("the shadowing stanza survived:\n%s", after)
+	}
+	if !strings.Contains(after, "Host bastion") {
+		t.Errorf("an unrelated stanza was removed:\n%s", after)
+	}
+}
+
+func TestAdopt_NothingToDo(t *testing.T) {
+	home := fakeHome(t)
+	writeProfiles(t, home)
+
+	code, out, _ := exec2(t, "adopt")
+	if code != exitOK {
+		t.Fatalf("adopt exit = %d", code)
+	}
+	if !strings.Contains(out, "no ssh config") {
+		t.Errorf("adopt with no ssh config said:\n%s", out)
+	}
+	_ = home
+}
+
+func TestFixRemote(t *testing.T) {
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not installed")
+	}
+
+	home := fakeHome(t)
+	writeProfiles(t, home)
+
+	repo := filepath.Join(home, "work", "service")
+	if err := os.MkdirAll(repo, 0o750); err != nil {
+		t.Fatalf("setup: %v", err)
+	}
+	git(t, home, "init", "-q", repo)
+	git(t, home, "-C", repo, "remote", "add", "origin", "https://github.com/acme/service.git")
+
+	// Dry run reports and changes nothing.
+	code, out, errOut := exec2(t, "fix-remote", "-all")
+	if code != exitOK {
+		t.Fatalf("fix-remote exit = %d: %s", code, errOut)
+	}
+	if !strings.Contains(out, "git@github-work:acme/service.git") {
+		t.Errorf("dry run did not propose the alias form:\n%s", out)
+	}
+	if got := strings.TrimSpace(git(t, home, "-C", repo, "remote", "get-url", "origin")); got != "https://github.com/acme/service.git" {
+		t.Errorf("dry run changed the remote to %q", got)
+	}
+
+	if code, _, errOut = exec2(t, "fix-remote", "-all", "-write"); code != exitOK {
+		t.Fatalf("fix-remote -write exit = %d: %s", code, errOut)
+	}
+	if got := strings.TrimSpace(git(t, home, "-C", repo, "remote", "get-url", "origin")); got != "git@github-work:acme/service.git" {
+		t.Errorf("remote = %q, want the alias form", got)
+	}
+
+	// And it is idempotent.
+	if _, out, _ = exec2(t, "fix-remote", "-all"); !strings.Contains(out, "already uses the right host alias") {
+		t.Errorf("second run said:\n%s", out)
+	}
+}
+
+// A private key saved as something.pub is a mistake people really make, and
+// reporting it as a harmless public key would be worse than silence.
+func TestCheck_TellsPrivateKeyMaterialFromPublic(t *testing.T) {
+	home := fakeHome(t)
+	writeProfiles(t, home)
+
+	if err := os.WriteFile(filepath.Join(home, "stray_private.pub"),
+		[]byte("-----BEGIN OPENSSH PRIVATE KEY-----\nb3Blbn\n"), 0o600); err != nil {
+		t.Fatalf("setup: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(home, "stray_public.pub"),
+		[]byte("ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIEQ user@host\n"), 0o644); err != nil {
+		t.Fatalf("setup: %v", err)
+	}
+
+	code, out, errOut := exec2(t, "check")
+	if code != exitOK {
+		t.Fatalf("check exit = %d: %s", code, errOut)
+	}
+
+	for _, line := range strings.Split(out, "\n") {
+		if strings.Contains(line, "stray_private.pub") {
+			if !strings.HasPrefix(line, "warn") {
+				t.Errorf("private key material reported at the wrong level:\n%s", line)
+			}
+			if !strings.Contains(line, "private key material") {
+				t.Errorf("private key material misdescribed:\n%s", line)
+			}
+		}
+		if strings.Contains(line, "stray_public.pub") && !strings.HasPrefix(line, "info") {
+			t.Errorf("a public key should be info, not a warning:\n%s", line)
+		}
+	}
+	if !strings.Contains(out, "stray_private.pub") {
+		t.Errorf("check missed the private key entirely:\n%s", out)
+	}
+}
+
+func git(t *testing.T, home string, args ...string) string {
+	t.Helper()
+	cmd := exec.CommandContext(t.Context(), "git", args...)
+	cmd.Env = append(os.Environ(), "HOME="+home, "GIT_CONFIG_GLOBAL="+filepath.Join(home, ".gitconfig"))
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("git %v: %v\n%s", args, err, out)
+	}
+	return string(out)
+}
