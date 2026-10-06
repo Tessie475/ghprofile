@@ -20,6 +20,10 @@ import (
 type Options struct {
 	DryRun  bool
 	Backups *Backups
+
+	// PromptPassphrase runs ssh-keygen interactively so it can ask for a
+	// passphrase, instead of writing the key unencrypted.
+	PromptPassphrase bool
 }
 
 // Run executes each action in order, stopping at the first failure.
@@ -46,7 +50,7 @@ func execute(ctx context.Context, a plan.Action, opts Options) error {
 		if err := os.MkdirAll(filepath.Dir(a.Path), keys.DirMode); err != nil {
 			return err
 		}
-		return keys.Generate(ctx, a.Path, a.Comment)
+		return keys.Generate(ctx, a.Path, a.Comment, opts.PromptPassphrase)
 
 	case plan.Chmod:
 		return os.Chmod(a.Path, a.Mode)

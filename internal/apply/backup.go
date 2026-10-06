@@ -52,21 +52,23 @@ func (b *Backups) Save(path string) (string, error) {
 		return "", fmt.Errorf("stat %s: %w", path, err)
 	}
 
-	dest, err := b.reserve(path)
+	dest, err := b.write(path, data, info.Mode().Perm())
 	if err != nil {
 		return "", err
-	}
-	if err := os.WriteFile(dest, data, info.Mode().Perm()); err != nil {
-		return "", fmt.Errorf("write %s: %w", dest, err)
 	}
 
 	b.done[path] = dest
 	return dest, nil
 }
 
-// reserve picks a name no existing file holds, so a second run in the same
-// second cannot clobber an earlier backup either.
-func (b *Backups) reserve(path string) (string, error) {
+// write creates the backup under the first name nothing else holds, so a
+// second run in the same second cannot clobber an earlier backup.
+//
+// O_EXCL makes claiming the name and creating the file one step. Checking with
+// Lstat first and writing afterwards would leave a window in which another
+// process could take the name between the two, and acting on a stale
+// observation is worse than not looking at all.
+func (b *Backups) write(path string, data []byte, perm fs.FileMode) (string, error) {
 	stamp := b.clock().UTC().Format("20060102T150405Z")
 	base := fmt.Sprintf("%s.ghprofile-backup-%s", path, stamp)
 
@@ -75,11 +77,33 @@ func (b *Backups) reserve(path string) (string, error) {
 		if i > 0 {
 			candidate = fmt.Sprintf("%s.%d", base, i)
 		}
-		if _, err := os.Lstat(candidate); errors.Is(err, fs.ErrNotExist) {
-			return candidate, nil
-		} else if err != nil {
-			return "", fmt.Errorf("stat %s: %w", candidate, err)
+
+		f, err := os.OpenFile(candidate, os.O_WRONLY|os.O_CREATE|os.O_EXCL, perm)
+		if errors.Is(err, fs.ErrExist) {
+			continue
 		}
+		if err != nil {
+			return "", fmt.Errorf("create %s: %w", candidate, err)
+		}
+
+		if err := finish(f, data, perm); err != nil {
+			return "", fmt.Errorf("write %s: %w", candidate, err)
+		}
+		return candidate, nil
 	}
 	return "", fmt.Errorf("could not find an unused backup name for %s", path)
+}
+
+// finish writes the body and fixes the mode, which O_CREATE leaves subject to
+// the process umask.
+func finish(f *os.File, data []byte, perm fs.FileMode) error {
+	defer func() { _ = f.Close() }()
+
+	if _, err := f.Write(data); err != nil {
+		return err
+	}
+	if err := f.Chmod(perm); err != nil {
+		return err
+	}
+	return f.Close()
 }

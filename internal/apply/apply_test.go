@@ -3,6 +3,7 @@ package apply
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -262,5 +263,71 @@ func TestRun_MakeDirUsesTightPermissions(t *testing.T) {
 	}
 	if info.Mode().Perm() != 0o700 {
 		t.Errorf("mode = %v, want 0700", info.Mode().Perm())
+	}
+}
+
+// The backup name must be claimed and created in one step. An earlier version
+// checked with Lstat and wrote afterwards, which acted on a stale observation.
+// This asserts the observable consequence: a name already taken is never
+// overwritten, even when the clock is frozen so every run wants the same name.
+func TestBackups_SaveNeverOverwritesEvenWithAFrozenClock(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config")
+	frozen := func() time.Time { return time.Unix(1700000000, 0).UTC() }
+
+	var written []string
+	for i, body := range []string{"RUN ONE\n", "RUN TWO\n", "RUN THREE\n"} {
+		if err := os.WriteFile(path, []byte(body), 0o600); err != nil {
+			t.Fatalf("setup %d: %v", i, err)
+		}
+		dest, err := (&Backups{done: map[string]string{}, clock: frozen}).Save(path)
+		if err != nil {
+			t.Fatalf("Save() %d error = %v", i, err)
+		}
+		written = append(written, dest)
+	}
+
+	// Three distinct names, despite one timestamp.
+	seen := map[string]bool{}
+	for _, d := range written {
+		if seen[d] {
+			t.Fatalf("name %q was reused, so an earlier backup was destroyed", d)
+		}
+		seen[d] = true
+	}
+
+	// And each still holds what it captured.
+	for i, want := range []string{"RUN ONE\n", "RUN TWO\n", "RUN THREE\n"} {
+		if got := readFile(t, written[i]); got != want {
+			t.Errorf("backup %d holds %q, want %q", i, got, want)
+		}
+	}
+}
+
+// O_CREATE leaves the mode subject to the umask, so it is set explicitly.
+func TestBackups_SavePreservesMode(t *testing.T) {
+	dir := t.TempDir()
+
+	for _, mode := range []fs.FileMode{0o600, 0o644} {
+		path := filepath.Join(dir, fmt.Sprintf("config-%o", mode))
+		if err := os.WriteFile(path, []byte("x\n"), mode); err != nil {
+			t.Fatalf("setup: %v", err)
+		}
+		if err := os.Chmod(path, mode); err != nil {
+			t.Fatalf("setup chmod: %v", err)
+		}
+
+		dest, err := NewBackups().Save(path)
+		if err != nil {
+			t.Fatalf("Save() error = %v", err)
+		}
+
+		info, err := os.Stat(dest)
+		if err != nil {
+			t.Fatalf("stat: %v", err)
+		}
+		if info.Mode().Perm() != mode {
+			t.Errorf("backup of a %v file is %v, want %v", mode, info.Mode().Perm(), mode)
+		}
 	}
 }
