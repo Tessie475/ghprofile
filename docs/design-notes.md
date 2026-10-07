@@ -379,26 +379,36 @@ or add a keychain entry for one that does not.
 on both sides. Subtracting before converting would underflow on a truncated
 file and let a bogus length through, which gosec caught.
 
-### No postflight hook on the cask
+### The cask postflight hook is load-bearing
 
-The cask carried a `postflight` block clearing `com.apple.quarantine`, on the
-assumption that a cask download is quarantined and an unsigned binary would then
-refuse to run with "the developer cannot be verified".
+The cask clears `com.apple.quarantine` in a `postflight` block. v0.2.2 removed
+it and v0.2.3 put it back, because removing it broke installation:
 
-That assumption was wrong, and checking Homebrew's own source settled it.
-Quarantine is applied in `Cask::Artifact::Moved`, which backs `app`, `pkg`,
-`font` and similar. A `binary` artifact is `Binary < Symlinked < Relocated` and
-never touches it. Only `moved.rb` mentions quarantine at all.
+    "ghprofile" Not Opened
+    Apple could not verify "ghprofile" is free of malware that may harm your Mac
 
-So the hook did nothing except make Homebrew print
+with Move to Trash as the default button.
 
-    Warning: Calling `postflight` is deprecated! Use `postflight_steps` instead.
-    Please report this issue to the tessie475/homebrew-tap tap
+The reasoning for removing it was that quarantine is applied in
+`Cask::Artifact::Moved`, which backs `app`, `pkg` and `font`, while a `binary`
+artifact is `Binary < Symlinked < Relocated` and never touches it. Only
+`moved.rb` mentions quarantine in `cask/artifact/`.
 
-twice on every install and upgrade, pointing users at a bug that was not there.
-`postflight_steps` is a structured steps stanza rather than an arbitrary Ruby
-block, and GoReleaser 2.18 has no field that emits it, so migrating was not an
-option either. Deleting was the fix.
+That was true and irrelevant. Homebrew propagates the attribute from the
+downloaded archive to the staged files, and that code is not in
+`cask/artifact/`. The conclusion came from grepping one directory and treating
+absence there as absence everywhere. The lesson is narrower than "check more
+directories": an inference about whether something is needed is not evidence,
+and the only proof available was an install, which was not done.
+
+Homebrew deprecates `postflight` in favour of `postflight_steps`, so every
+install prints a warning telling the user to file a bug against the tap. That
+stays, because `postflight_steps` takes a structured sandboxed step list rather
+than a Ruby block and GoReleaser 2.18 has no field that emits one. A noisy
+warning is clearly the lesser problem next to a binary that will not start.
+
+The real fix is signing and notarizing the binary, which removes quarantine's
+bite entirely and needs a paid Apple Developer account.
 
 ### IsEncrypted understands three key formats
 

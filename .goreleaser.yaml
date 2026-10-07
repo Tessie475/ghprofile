@@ -67,13 +67,26 @@ release:
 # Linux URLs, but Homebrew on Linux does not officially support casks, so the
 # README points Linux users at the binary or scripts/install.sh.
 #
-# No postflight hook. An earlier version cleared com.apple.quarantine, on the
-# assumption that a cask download is quarantined and an unsigned binary would
-# then refuse to run. It is not: Homebrew applies quarantine in its Moved
-# artifact, used by app, pkg, font and so on, while "binary" is
-# Binary < Symlinked < Relocated and never touches it. The hook did nothing
-# except make Homebrew print a deprecation warning twice per install, telling
-# users to file a bug against the tap.
+# The postflight hook is load-bearing. Do not remove it again.
+#
+# v0.2.2 removed it, reasoning that quarantine is applied in Homebrew's Moved
+# artifact (app, pkg, font) while "binary" is Binary < Symlinked < Relocated
+# and never touches it. That reasoning came from grepping cask/artifact/ alone
+# and it was wrong: Homebrew propagates the attribute from the downloaded
+# archive to the staged files elsewhere. Installing v0.2.2 produced
+#
+#   "ghprofile" Not Opened
+#   Apple could not verify "ghprofile" is free of malware
+#
+# with Move to Trash as the default button.
+#
+# Homebrew deprecates "postflight" in favour of "postflight_steps", which is a
+# structured sandboxed step list rather than a Ruby block, and GoReleaser 2.18
+# has no field that emits it. So the deprecation warning stays until either
+# GoReleaser gains support or the binary is signed and notarized, which is the
+# real fix and needs a paid Apple Developer account.
+#
+# A noisy warning is the lesser problem next to a binary that will not start.
 #
 # One-time setup, before the first tag:
 #   1. Create a PUBLIC repository named exactly "homebrew-tap" under your
@@ -97,3 +110,9 @@ homebrew_casks:
     commit_author:
       name: Tessie475
       email: eberechichukwu1@gmail.com
+    hooks:
+      post:
+        install: |
+          if system_command("/usr/bin/xattr", args: ["-h"]).exit_status == 0
+            system_command "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "#{staged_path}/ghprofile"]
+          end
