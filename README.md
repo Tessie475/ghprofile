@@ -41,10 +41,24 @@ brew install Tessie475/tap/ghprofile
 One command. Homebrew taps automatically when you give the full name, so there
 is no separate step. Upgrades come through `brew upgrade` like anything else.
 
-If you would rather type `brew install ghprofile` from then on, tap once first:
+Naming the cask in full also satisfies Homebrew's tap trust check, which has
+been required since Homebrew 7.0. Taps are repositories of Ruby that `brew`
+executes in order to read them, so Homebrew now wants your consent before
+loading code from anyone who is not an official tap. Spelling out
+`Tessie475/tap/ghprofile` is that consent.
+
+Which means the short form needs trusting the tap first, or it is refused:
 
 ```bash
-brew tap Tessie475/tap && brew install ghprofile
+brew trust Tessie475/tap && brew install ghprofile
+```
+
+Worth pausing over rather than pasting. That trusts **every** formula and cask
+this tap ships, now and in future. If you would rather trust only this one
+thing, keep using the full name, or:
+
+```bash
+brew trust --cask Tessie475/tap/ghprofile
 ```
 
 ### Download a binary
@@ -53,12 +67,14 @@ Every release publishes builds for macOS and Linux on amd64 and arm64, plus
 Windows amd64, with a checksums file. Grab yours from
 [the releases page](https://github.com/Tessie475/ghprofile/releases), then:
 
+Substitute the version and your platform:
+
 ```bash
-shasum -a 256 -c ghprofile_0.1.0_checksums.txt --ignore-missing
+shasum -a 256 -c ghprofile_<version>_checksums.txt --ignore-missing
 ```
 
 ```bash
-tar -xzf ghprofile_0.1.0_darwin_arm64.tar.gz ghprofile && sudo mv ghprofile /usr/local/bin/
+tar -xzf ghprofile_<version>_darwin_arm64.tar.gz ghprofile && sudo mv ghprofile /usr/local/bin/
 ```
 
 <details>
