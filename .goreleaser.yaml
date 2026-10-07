@@ -67,6 +67,14 @@ release:
 # Linux URLs, but Homebrew on Linux does not officially support casks, so the
 # README points Linux users at the binary or scripts/install.sh.
 #
+# No postflight hook. An earlier version cleared com.apple.quarantine, on the
+# assumption that a cask download is quarantined and an unsigned binary would
+# then refuse to run. It is not: Homebrew applies quarantine in its Moved
+# artifact, used by app, pkg, font and so on, while "binary" is
+# Binary < Symlinked < Relocated and never touches it. The hook did nothing
+# except make Homebrew print a deprecation warning twice per install, telling
+# users to file a bug against the tap.
+#
 # One-time setup, before the first tag:
 #   1. Create a PUBLIC repository named exactly "homebrew-tap" under your
 #      account. It can be empty. The "homebrew-" prefix is what makes
@@ -89,12 +97,3 @@ homebrew_casks:
     commit_author:
       name: Tessie475
       email: eberechichukwu1@gmail.com
-    # macOS quarantines anything downloaded by a cask, and an unsigned binary
-    # then refuses to run with "the developer cannot be verified". This clears
-    # the attribute on install. From GoReleaser's own cask documentation.
-    hooks:
-      post:
-        install: |
-          if system_command("/usr/bin/xattr", args: ["-h"]).exit_status == 0
-            system_command "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "#{staged_path}/ghprofile"]
-          end

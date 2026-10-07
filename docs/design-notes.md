@@ -378,3 +378,46 @@ or add a keychain entry for one that does not.
 `privateKeyCipher` validates its lengths before indexing, and compares as int64
 on both sides. Subtracting before converting would underflow on a truncated
 file and let a bogus length through, which gosec caught.
+
+### No postflight hook on the cask
+
+The cask carried a `postflight` block clearing `com.apple.quarantine`, on the
+assumption that a cask download is quarantined and an unsigned binary would then
+refuse to run with "the developer cannot be verified".
+
+That assumption was wrong, and checking Homebrew's own source settled it.
+Quarantine is applied in `Cask::Artifact::Moved`, which backs `app`, `pkg`,
+`font` and similar. A `binary` artifact is `Binary < Symlinked < Relocated` and
+never touches it. Only `moved.rb` mentions quarantine at all.
+
+So the hook did nothing except make Homebrew print
+
+    Warning: Calling `postflight` is deprecated! Use `postflight_steps` instead.
+    Please report this issue to the tessie475/homebrew-tap tap
+
+twice on every install and upgrade, pointing users at a bug that was not there.
+`postflight_steps` is a structured steps stanza rather than an arbitrary Ruby
+block, and GoReleaser 2.18 has no field that emits it, so migrating was not an
+option either. Deleting was the fix.
+
+### IsEncrypted understands three key formats
+
+`privateKeyCipher` only read the `openssh-key-v1` magic, so a legacy RSA key
+returned `ErrMalformedPrivateKey`. Nothing could reach that path, since the only
+caller reads a key ghprofile generated seconds earlier, but the function is
+exported and telling someone their working key is malformed is the wrong answer.
+
+The formats now classified, each from information kept in clear text:
+
+| Armor | How encryption is read |
+|---|---|
+| `BEGIN OPENSSH PRIVATE KEY` | length-prefixed cipher name in the decoded body |
+| `BEGIN ENCRYPTED PRIVATE KEY` | PKCS#8 says so in the armor itself |
+| `BEGIN PRIVATE KEY` | PKCS#8, unencrypted by definition |
+| `BEGIN RSA/DSA/EC PRIVATE KEY` | traditional PEM, a `Proc-Type: 4,ENCRYPTED` header above the base64 |
+
+Anything else returns `ErrUnsupportedKeyFormat`, which is distinct from
+`ErrMalformedPrivateKey` so a caller can say something true. The default is an
+error rather than "not encrypted", because claiming a key is unencrypted when it
+cannot be read would skip the agent step and make verification fail for a reason
+the user could not act on.

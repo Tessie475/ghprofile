@@ -18,9 +18,10 @@ import (
 
 // Key problems.
 var (
-	ErrMalformedPublicKey  = errors.New("malformed public key")
-	ErrKeygen              = errors.New("ssh-keygen failed")
-	ErrMalformedPrivateKey = errors.New("malformed private key")
+	ErrMalformedPublicKey   = errors.New("malformed public key")
+	ErrKeygen               = errors.New("ssh-keygen failed")
+	ErrMalformedPrivateKey  = errors.New("malformed private key")
+	ErrUnsupportedKeyFormat = errors.New("unsupported private key format")
 )
 
 // Permissions OpenSSH insists on.
@@ -139,20 +140,74 @@ func Generate(ctx context.Context, path, comment string, noPassphrase bool) erro
 // decides whether the key has to go into the agent before verification can use
 // it. So it reads the answer off the file instead of guessing.
 //
-// An OpenSSH private key records its cipher in clear text near the start of
-// the base64 body: the magic "openssh-key-v1\0", then a length-prefixed cipher
-// name, which is "none" when there is no passphrase.
+// Two formats are understood. A modern OpenSSH key records its cipher in clear
+// text near the start of the base64 body. A legacy PEM key, which plenty of
+// people are still carrying from an RSA key made years ago, announces
+// encryption with a Proc-Type header above the base64 instead.
+//
+// Anything else returns ErrUnsupportedKeyFormat rather than
+// ErrMalformedPrivateKey, because telling someone their working key is
+// malformed is the wrong answer.
 func IsEncrypted(path string) (bool, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return false, fmt.Errorf("read %s: %w", path, err)
 	}
 
-	cipher, err := privateKeyCipher(data)
-	if err != nil {
-		return false, err
+	if !LooksPrivate(data) {
+		return false, ErrMalformedPrivateKey
 	}
-	return cipher != "none", nil
+
+	switch h := head(data); {
+	case strings.Contains(h, "BEGIN OPENSSH PRIVATE KEY"):
+		cipher, err := privateKeyCipher(data)
+		if err != nil {
+			return false, err
+		}
+		return cipher != "none", nil
+
+	// PKCS#8 says so in the armor line itself.
+	case strings.Contains(h, "BEGIN ENCRYPTED PRIVATE KEY"):
+		return true, nil
+	case strings.Contains(h, "BEGIN PRIVATE KEY"):
+		return false, nil
+
+	// Traditional OpenSSL PEM, as ssh-keygen -m PEM writes and as older
+	// versions wrote by default. Encryption is announced in clear text above
+	// the base64; an unencrypted one carries no headers at all.
+	case isLegacyPEM(h):
+		return strings.Contains(h, "Proc-Type:") && strings.Contains(h, "ENCRYPTED"), nil
+
+	default:
+		return false, ErrUnsupportedKeyFormat
+	}
+}
+
+// legacyPEMTypes are the traditional OpenSSL armor lines whose encryption can
+// be read from the headers.
+var legacyPEMTypes = []string{
+	"BEGIN RSA PRIVATE KEY",
+	"BEGIN DSA PRIVATE KEY",
+	"BEGIN EC PRIVATE KEY",
+}
+
+func isLegacyPEM(head string) bool {
+	for _, armor := range legacyPEMTypes {
+		if strings.Contains(head, armor) {
+			return true
+		}
+	}
+	return false
+}
+
+// head returns enough of the file to cover the armor line and any headers,
+// without reading a whole key into a second string.
+func head(data []byte) string {
+	const n = 512
+	if len(data) > n {
+		data = data[:n]
+	}
+	return string(data)
 }
 
 const opensshMagic = "openssh-key-v1\x00"
@@ -173,7 +228,9 @@ func privateKeyCipher(pem []byte) (string, error) {
 
 	magic := []byte(opensshMagic)
 	if !bytes.HasPrefix(raw, magic) {
-		return "", ErrMalformedPrivateKey
+		// Valid PEM armor, but not a format whose cipher this can read, such
+		// as PKCS#8. Not the same thing as a corrupt file.
+		return "", ErrUnsupportedKeyFormat
 	}
 
 	rest := raw[len(magic):]

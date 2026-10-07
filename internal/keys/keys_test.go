@@ -277,7 +277,6 @@ func TestIsEncrypted_Errors(t *testing.T) {
 	}{
 		{"empty", ""},
 		{"not base64", "-----BEGIN OPENSSH PRIVATE KEY-----\n!!!not base64!!!\n-----END OPENSSH PRIVATE KEY-----\n"},
-		{"base64 but not a key", "-----BEGIN OPENSSH PRIVATE KEY-----\naGVsbG8gdGhlcmU=\n-----END OPENSSH PRIVATE KEY-----\n"},
 		{"truncated after the magic", "-----BEGIN OPENSSH PRIVATE KEY-----\n" + "b3BlbnNzaC1rZXktdjEA" + "\n-----END OPENSSH PRIVATE KEY-----\n"},
 		{"a public key, not a private one", fixturePub},
 	}
@@ -335,5 +334,121 @@ func keygen(t *testing.T, path, passphrase string) {
 	cmd := exec.CommandContext(t.Context(), "ssh-keygen", "-t", "ed25519", "-f", path, "-N", passphrase, "-C", "test", "-q")
 	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("ssh-keygen: %v\n%s", err, out)
+	}
+}
+
+// A legacy RSA key made years ago is a working key, not a corrupt one. Saying
+// "malformed" about it would be the wrong answer.
+func TestIsEncrypted_LegacyPEM(t *testing.T) {
+	if _, err := exec.LookPath("ssh-keygen"); err != nil {
+		t.Skip("ssh-keygen not installed")
+	}
+	dir := t.TempDir()
+
+	plain := filepath.Join(dir, "legacy_plain")
+	locked := filepath.Join(dir, "legacy_locked")
+	keygenPEM(t, plain, "")
+	keygenPEM(t, locked, "a real passphrase")
+
+	got, err := IsEncrypted(plain)
+	if err != nil {
+		t.Fatalf("IsEncrypted(legacy plaintext) error = %v, want nil", err)
+	}
+	if got {
+		t.Error("IsEncrypted(legacy plaintext) = true, want false")
+	}
+
+	got, err = IsEncrypted(locked)
+	if err != nil {
+		t.Fatalf("IsEncrypted(legacy encrypted) error = %v, want nil", err)
+	}
+	if !got {
+		t.Error("IsEncrypted(legacy encrypted) = false, want true")
+	}
+}
+
+// A format whose cipher cannot be read is distinct from a corrupt file, so a
+// caller can tell the user something true.
+func TestIsEncrypted_UnsupportedFormat(t *testing.T) {
+	dir := t.TempDir()
+
+	tests := []struct {
+		name    string
+		content string
+	}{
+		{
+			name:    "valid openssh armor, body is not an openssh key",
+			content: "-----BEGIN OPENSSH PRIVATE KEY-----\naGVsbG8gdGhlcmU=\n-----END OPENSSH PRIVATE KEY-----\n",
+		},
+		{
+			name:    "an armor line from no format we read",
+			content: "-----BEGIN SOMETHING PRIVATE KEY-----\naGVsbG8=\n-----END SOMETHING PRIVATE KEY-----\n",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			path := filepath.Join(dir, "k-"+tt.name)
+			if err := os.WriteFile(path, []byte(tt.content), 0o600); err != nil {
+				t.Fatalf("setup: %v", err)
+			}
+
+			_, err := IsEncrypted(path)
+			if !errors.Is(err, ErrUnsupportedKeyFormat) {
+				t.Errorf("error = %v, want ErrUnsupportedKeyFormat", err)
+			}
+			if errors.Is(err, ErrMalformedPrivateKey) {
+				t.Error("a readable key in an unknown format was called malformed")
+			}
+		})
+	}
+}
+
+// PKCS#8 announces encryption in its armor line, so both forms are answerable
+// without decoding anything.
+func TestIsEncrypted_PKCS8(t *testing.T) {
+	dir := t.TempDir()
+
+	tests := []struct {
+		name    string
+		content string
+		want    bool
+	}{
+		{
+			name:    "unencrypted",
+			content: "-----BEGIN PRIVATE KEY-----\naGVsbG8=\n-----END PRIVATE KEY-----\n",
+			want:    false,
+		},
+		{
+			name:    "encrypted",
+			content: "-----BEGIN ENCRYPTED PRIVATE KEY-----\naGVsbG8=\n-----END ENCRYPTED PRIVATE KEY-----\n",
+			want:    true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			path := filepath.Join(dir, "pkcs8-"+tt.name)
+			if err := os.WriteFile(path, []byte(tt.content), 0o600); err != nil {
+				t.Fatalf("setup: %v", err)
+			}
+
+			got, err := IsEncrypted(path)
+			if err != nil {
+				t.Fatalf("IsEncrypted() error = %v, want nil", err)
+			}
+			if got != tt.want {
+				t.Errorf("IsEncrypted() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func keygenPEM(t *testing.T, path, passphrase string) {
+	t.Helper()
+	cmd := exec.CommandContext(t.Context(), "ssh-keygen",
+		"-m", "PEM", "-t", "rsa", "-b", "2048", "-f", path, "-N", passphrase, "-C", "legacy", "-q")
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("ssh-keygen -m PEM: %v\n%s", err, out)
 	}
 }
