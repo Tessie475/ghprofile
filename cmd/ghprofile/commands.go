@@ -193,7 +193,7 @@ func (a *app) cmdApply(ctx context.Context, args []string) int {
 	noBackup := fset.Bool("no-backup", false, "do not write timestamped backups before overwriting")
 	noAdopt := fset.Bool("no-adopt", false, "leave hand-written stanzas in place, even when they shadow a profile")
 	noUpload := fset.Bool("no-upload", false, "do not offer to put missing keys on their accounts")
-	passphrase := fset.Bool("passphrase", false, "ask for a passphrase when generating a key, rather than writing it unencrypted")
+	noPassphrase := fset.Bool("no-passphrase", false, "do not ask for a passphrase when generating a key, write it unencrypted")
 	noBrowser := fset.Bool("no-browser", false, "do not open a browser when uploading")
 	timeout := fset.Duration("timeout", 90*time.Second, "how long to wait for a key to become live")
 	if err := fset.Parse(args); err != nil {
@@ -222,7 +222,7 @@ func (a *app) cmdApply(ctx context.Context, args []string) int {
 	}
 
 	if len(actions) > 0 {
-		opts := apply.Options{DryRun: *dry, Backups: backups, PromptPassphrase: *passphrase}
+		opts := apply.Options{DryRun: *dry, Backups: backups, NoPassphrase: *noPassphrase, UseKeychain: a.darwin}
 		if err := apply.Run(ctx, actions, opts, a.out); err != nil {
 			return a.fail(err)
 		}

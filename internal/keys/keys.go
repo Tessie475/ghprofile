@@ -2,9 +2,11 @@
 package keys
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/base64"
+	"encoding/binary"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -16,8 +18,9 @@ import (
 
 // Key problems.
 var (
-	ErrMalformedPublicKey = errors.New("malformed public key")
-	ErrKeygen             = errors.New("ssh-keygen failed")
+	ErrMalformedPublicKey  = errors.New("malformed public key")
+	ErrKeygen              = errors.New("ssh-keygen failed")
+	ErrMalformedPrivateKey = errors.New("malformed private key")
 )
 
 // Permissions OpenSSH insists on.
@@ -100,17 +103,22 @@ func Fingerprint(pub []byte) (string, error) {
 
 // Generate creates an ed25519 keypair at path.
 //
-// When prompt is false the key is written unencrypted, which is what makes
-// unattended use possible. When it is true, ssh-keygen runs with the terminal
-// attached and asks for a passphrase itself.
+// By default ssh-keygen runs with the terminal attached and asks for a
+// passphrase, which is exactly what GitHub's own documented command does.
+// Pressing Enter twice declines and produces an unencrypted key, so the choice
+// is the user's and they are told it exists.
+//
+// With stdin closed, as in CI, ssh-keygen reads EOF as an empty passphrase and
+// carries on rather than hanging. noPassphrase makes that explicit for scripts
+// that would rather say so than rely on it.
 //
 // The passphrase is never accepted as an argument. Anything in argv is visible
 // in the process list and, if typed, in shell history, which is a poor place
 // for the thing protecting a private key.
-func Generate(ctx context.Context, path, comment string, prompt bool) error {
+func Generate(ctx context.Context, path, comment string, noPassphrase bool) error {
 	args := []string{"-t", "ed25519", "-f", path, "-C", comment}
 
-	if prompt {
+	if !noPassphrase {
 		// No -N, so ssh-keygen prompts for and confirms the passphrase.
 		return shell.RunInteractive(ctx, "ssh-keygen", args...)
 	}
@@ -123,6 +131,82 @@ func Generate(ctx context.Context, path, comment string, prompt bool) error {
 		return fmt.Errorf("%w: %s", ErrKeygen, strings.TrimSpace(res.Stderr+res.Stdout))
 	}
 	return nil
+}
+
+// IsEncrypted reports whether a private key is protected by a passphrase.
+//
+// The tool cannot know what the user typed at the prompt, and the answer
+// decides whether the key has to go into the agent before verification can use
+// it. So it reads the answer off the file instead of guessing.
+//
+// An OpenSSH private key records its cipher in clear text near the start of
+// the base64 body: the magic "openssh-key-v1\0", then a length-prefixed cipher
+// name, which is "none" when there is no passphrase.
+func IsEncrypted(path string) (bool, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return false, fmt.Errorf("read %s: %w", path, err)
+	}
+
+	cipher, err := privateKeyCipher(data)
+	if err != nil {
+		return false, err
+	}
+	return cipher != "none", nil
+}
+
+const opensshMagic = "openssh-key-v1\x00"
+
+func privateKeyCipher(pem []byte) (string, error) {
+	var body strings.Builder
+	for _, line := range strings.Split(string(pem), "\n") {
+		if strings.HasPrefix(line, "-----") || strings.TrimSpace(line) == "" {
+			continue
+		}
+		body.WriteString(strings.TrimSpace(line))
+	}
+
+	raw, err := base64.StdEncoding.DecodeString(body.String())
+	if err != nil {
+		return "", fmt.Errorf("%w: %w", ErrMalformedPrivateKey, err)
+	}
+
+	magic := []byte(opensshMagic)
+	if !bytes.HasPrefix(raw, magic) {
+		return "", ErrMalformedPrivateKey
+	}
+
+	rest := raw[len(magic):]
+	if len(rest) < 4 {
+		return "", ErrMalformedPrivateKey
+	}
+
+	n := binary.BigEndian.Uint32(rest[:4])
+	rest = rest[4:]
+
+	// int64 on both sides, so neither conversion can wrap. Subtracting before
+	// converting would underflow on a truncated file and let the check pass.
+	if int64(n) > int64(len(rest)) {
+		return "", ErrMalformedPrivateKey
+	}
+	return string(rest[:n]), nil
+}
+
+// AddToAgent loads a key into the running ssh agent.
+//
+// A passphrase-protected key is unusable by anything that cannot prompt, and
+// verification deliberately runs ssh with BatchMode=yes so it never blocks. So
+// a freshly encrypted key has to be put in the agent, or the check that
+// follows would report a perfectly good setup as broken.
+//
+// useKeychain stores the passphrase in the macOS login keychain, which is what
+// makes this a one-time cost rather than a prompt per session.
+func AddToAgent(ctx context.Context, path string, useKeychain bool) error {
+	args := []string{}
+	if useKeychain {
+		args = append(args, "--apple-use-keychain")
+	}
+	return shell.RunInteractive(ctx, "ssh-add", append(args, path)...)
 }
 
 // LooksPrivate reports whether data is private key material rather than a

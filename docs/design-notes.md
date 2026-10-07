@@ -324,3 +324,57 @@ What that bought, specifically:
   will not fix itself.
 - `BatchMode=yes` is still passed, which is what stops ssh blocking on a
   passphrase prompt inside `apply`.
+
+### An encrypted key has to go into the agent immediately
+
+`-passphrase` was shipped generating an encrypted key and nothing more, which
+was wrong. Verification runs `ssh -o BatchMode=yes`, deliberately, so that
+`apply` can never hang on a prompt. But BatchMode also forbids the passphrase
+prompt, so a freshly encrypted key cannot be unlocked and the check that runs
+seconds later reports a perfectly good setup as broken.
+
+Measured, to be sure of the mechanism rather than assuming it:
+
+    plaintext key                  usable with no secret at all
+    encrypted key                  unusable without the passphrase
+    encrypted key, in the agent    usable with no prompt
+
+So `apply -passphrase` now runs `ssh-add` after generating, with
+`--apple-use-keychain` on darwin. That costs a second prompt once, and on macOS
+the keychain means never again.
+
+`AddKeysToAgent yes` in the rendered stanza does not help here. It adds a key to
+the agent *after* a successful use, and the first use is the thing that cannot
+happen.
+
+### ssh-keygen asks, the way GitHub's instructions do
+
+The first version passed `-N ""`, which suppresses the prompt and writes an
+unencrypted key. A later version added `-passphrase` to opt in.
+
+Both were wrong, for the same reason. GitHub's documented command,
+`ssh-keygen -t ed25519 -C "you@example.com"`, always asks, and an empty answer
+declines. Measured rather than assumed:
+
+    Enter passphrase for "github_way" (empty for no passphrase): Enter same passphrase again:
+      resulting cipher: none
+
+So GitHub does not give you a passphrase by default. It gives you the *question*
+by default, and most people press Enter. `-N ""` removed the question, which
+meant a user never learned the choice existed. An opt-in flag had the same
+effect, since nobody reads a flag list before running a command.
+
+`Generate` now omits `-N` and runs through `shell.RunInteractive`, so the prompt
+appears. `-no-passphrase` exists for scripts that want to be explicit, though
+with stdin closed ssh-keygen already reads EOF as an empty passphrase and
+carries on rather than hanging.
+
+One consequence: the command cannot know what the user typed. So `apply` reads
+the answer off the file with `keys.IsEncrypted`, which parses the cipher name
+out of the OpenSSH private key header, and only runs `ssh-add` when the key is
+actually encrypted. Guessing would either skip the agent for a key that needs it
+or add a keychain entry for one that does not.
+
+`privateKeyCipher` validates its lengths before indexing, and compares as int64
+on both sides. Subtracting before converting would underflow on a truncated
+file and let a bogus length through, which gosec caught.

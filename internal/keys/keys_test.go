@@ -1,8 +1,10 @@
 package keys
 
 import (
+	"context"
 	"errors"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -226,5 +228,112 @@ func TestFingerprint_FIDOKey(t *testing.T) {
 	}
 	if !strings.HasPrefix(got, "SHA256:") {
 		t.Errorf("Fingerprint() = %q, want a SHA256: prefix", got)
+	}
+}
+
+// Whether the user accepted the passphrase prompt is not knowable from the
+// command, so apply reads it off the file. If this were wrong, an encrypted key
+// would skip the agent and verification would call a working setup broken.
+func TestIsEncrypted(t *testing.T) {
+	if _, err := exec.LookPath("ssh-keygen"); err != nil {
+		t.Skip("ssh-keygen not installed")
+	}
+	dir := t.TempDir()
+
+	plain := filepath.Join(dir, "plain")
+	locked := filepath.Join(dir, "locked")
+	keygen(t, plain, "")
+	keygen(t, locked, "a real passphrase")
+
+	got, err := IsEncrypted(plain)
+	if err != nil {
+		t.Fatalf("IsEncrypted(plain) error = %v", err)
+	}
+	if got {
+		t.Error("IsEncrypted(plain) = true, want false")
+	}
+
+	got, err = IsEncrypted(locked)
+	if err != nil {
+		t.Fatalf("IsEncrypted(locked) error = %v", err)
+	}
+	if !got {
+		t.Error("IsEncrypted(locked) = false, want true")
+	}
+}
+
+func TestIsEncrypted_Errors(t *testing.T) {
+	dir := t.TempDir()
+
+	t.Run("missing file", func(t *testing.T) {
+		if _, err := IsEncrypted(filepath.Join(dir, "absent")); err == nil {
+			t.Error("error = nil, want one for a missing file")
+		}
+	})
+
+	tests := []struct {
+		name    string
+		content string
+	}{
+		{"empty", ""},
+		{"not base64", "-----BEGIN OPENSSH PRIVATE KEY-----\n!!!not base64!!!\n-----END OPENSSH PRIVATE KEY-----\n"},
+		{"base64 but not a key", "-----BEGIN OPENSSH PRIVATE KEY-----\naGVsbG8gdGhlcmU=\n-----END OPENSSH PRIVATE KEY-----\n"},
+		{"truncated after the magic", "-----BEGIN OPENSSH PRIVATE KEY-----\n" + "b3BlbnNzaC1rZXktdjEA" + "\n-----END OPENSSH PRIVATE KEY-----\n"},
+		{"a public key, not a private one", fixturePub},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			path := filepath.Join(dir, "k-"+tt.name)
+			if err := os.WriteFile(path, []byte(tt.content), 0o600); err != nil {
+				t.Fatalf("setup: %v", err)
+			}
+			if _, err := IsEncrypted(path); !errors.Is(err, ErrMalformedPrivateKey) {
+				t.Errorf("error = %v, want ErrMalformedPrivateKey", err)
+			}
+		})
+	}
+}
+
+// Generate must honour the prompt-by-default contract, which this only checks
+// in the explicit no-passphrase direction, since the other needs a terminal.
+func TestGenerate_NoPassphraseWritesAnUnencryptedKey(t *testing.T) {
+	if _, err := exec.LookPath("ssh-keygen"); err != nil {
+		t.Skip("ssh-keygen not installed")
+	}
+	path := filepath.Join(t.TempDir(), "id_ed25519_test")
+
+	if err := Generate(context.Background(), path, "test@example.com", true); err != nil {
+		t.Fatalf("Generate() error = %v", err)
+	}
+
+	k, err := Inspect(path)
+	if err != nil {
+		t.Fatalf("Inspect() error = %v", err)
+	}
+	if !k.Complete() {
+		t.Error("Generate() did not produce both halves")
+	}
+	if !k.PermissionsOK() {
+		t.Errorf("generated key is mode %v, too loose for OpenSSH", k.Mode.Perm())
+	}
+	if k.Comment != "test@example.com" {
+		t.Errorf("Comment = %q, want the comment passed in", k.Comment)
+	}
+
+	encrypted, err := IsEncrypted(path)
+	if err != nil {
+		t.Fatalf("IsEncrypted() error = %v", err)
+	}
+	if encrypted {
+		t.Error("the key is encrypted despite noPassphrase being true")
+	}
+}
+
+func keygen(t *testing.T, path, passphrase string) {
+	t.Helper()
+	cmd := exec.CommandContext(t.Context(), "ssh-keygen", "-t", "ed25519", "-f", path, "-N", passphrase, "-C", "test", "-q")
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("ssh-keygen: %v\n%s", err, out)
 	}
 }

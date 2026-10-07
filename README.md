@@ -182,7 +182,7 @@ touches a `Host` stanza no profile claims.
 | Command | What it does |
 |---|---|
 | `add <name>` | Adds an identity, inferring the alias, key path and commit name |
-| `apply` | Does everything: take over, keygen, config, key upload, checks. `-passphrase` to encrypt generated keys |
+| `apply` | Does everything: take over, keygen, config, key upload, checks. `-no-passphrase` to skip the passphrase prompt |
 | `plan` | Shows what `apply` would change. `-check` exits 2 when changes are pending |
 | `check` | Inspects your setup offline and reports problems, fixing nothing |
 | `verify` | Asks each host which account its key reaches. Needs the network |
@@ -253,38 +253,61 @@ same way:
 
 ## Key passphrases
 
-By default a generated key is written **unencrypted**:
+When `apply` generates a key, `ssh-keygen` asks you for a passphrase, exactly as
+it does when you follow GitHub's own instructions:
 
-```bash
-ghprofile apply
+```
+Enter passphrase for "/Users/you/.ssh/id_ed25519_work" (empty for no passphrase):
+Enter same passphrase again:
 ```
 
-That is a deliberate trade, and worth understanding before you accept it.
+**Press Enter twice to decline.** The key is then written unencrypted, which is
+what most people do and is a reasonable choice on a machine you trust.
 
-An unencrypted key means anything that can read the file can use the key. A
-passphrase means it cannot, but something has to supply that passphrase on every
-use, which is what the ssh agent is for.
+### What declining costs you
 
-ghprofile writes `AddKeysToAgent yes` into every stanza, and `UseKeychain yes`
-on macOS, so a passphrase-protected key is unlocked once and then stored in the
-login keychain. In practice you are prompted once, ever. On Linux there is no
-keychain equivalent, so expect a prompt once per login session.
+Without a passphrase the key file *is* the credential. Anything that can read
+`~/.ssh/id_ed25519_work` can push as you: a backup on an unencrypted drive, a
+home directory that got synced somewhere, a package's install script, a stolen
+laptop. With one, the file alone is useless.
 
-Given that, a passphrase costs very little and is worth opting into:
+It protects a file at rest. It does not protect an unlocked session, where the
+agent already holds the key.
+
+### What accepting costs you
+
+Almost nothing on macOS. If you set a passphrase, ghprofile runs `ssh-add
+--apple-use-keychain` straight afterwards, so you are asked once more and then
+macOS stores it in your login keychain. Every `git push` after that is silent,
+including across reboots. On Linux there is no keychain equivalent, so expect a
+prompt once per login session.
+
+That second step is not cosmetic. Verification runs `ssh -o BatchMode=yes` so it
+can never hang, but BatchMode also forbids the passphrase prompt, so a key that
+is encrypted and not in the agent would make the check fail and report a working
+setup as broken.
+
+### Forgetting it
+
+There is no reset, but very little is at stake. The passphrase is probably in
+your login keychain already: open Keychain Access and search for the key's path.
+And if it is not, keys are access tokens rather than identity. Nothing is tied
+to them, no repositories, no commits, no history. Delete the key, generate
+another, upload the new public half, remove the old one. Five minutes.
+
+The passphrase is a new secret you invent at the prompt. It is not your GitHub
+password, and GitHub never sees it or knows it exists. It unlocks a local file,
+nothing more.
+
+### Scripts
 
 ```bash
-ghprofile apply -passphrase
+ghprofile apply -no-passphrase
 ```
 
-`ssh-keygen` then asks for the passphrase itself, with the terminal attached.
-ghprofile never accepts a passphrase as a flag value, because anything in a
-command's arguments is visible in the process list and, if you typed it, in your
-shell history. That is a poor place for the thing protecting a private key.
-
-It is opt-in rather than the default because the tool's whole purpose is making
-multi-account work unattended, and a key that cannot be used without a prompt
-breaks that for anyone without a keychain. If you are generating a key for CI or
-a server, leave it off deliberately rather than by accident.
+With stdin closed, `ssh-keygen` reads EOF as an empty passphrase and carries on
+rather than hanging, so CI works either way. The flag is for saying so on
+purpose instead of relying on that.
 
 ## Plain URLs
 

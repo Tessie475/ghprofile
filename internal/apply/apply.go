@@ -21,9 +21,14 @@ type Options struct {
 	DryRun  bool
 	Backups *Backups
 
-	// PromptPassphrase runs ssh-keygen interactively so it can ask for a
-	// passphrase, instead of writing the key unencrypted.
-	PromptPassphrase bool
+	// NoPassphrase skips the passphrase prompt and writes the key
+	// unencrypted, for scripts that would rather say so than rely on an
+	// absent terminal.
+	NoPassphrase bool
+
+	// UseKeychain stores an encrypted key's passphrase in the macOS login
+	// keychain when adding it to the agent.
+	UseKeychain bool
 }
 
 // Run executes each action in order, stopping at the first failure.
@@ -50,7 +55,20 @@ func execute(ctx context.Context, a plan.Action, opts Options) error {
 		if err := os.MkdirAll(filepath.Dir(a.Path), keys.DirMode); err != nil {
 			return err
 		}
-		return keys.Generate(ctx, a.Path, a.Comment, opts.PromptPassphrase)
+		if err := keys.Generate(ctx, a.Path, a.Comment, opts.NoPassphrase); err != nil {
+			return err
+		}
+
+		// Whether the user accepted the prompt is not knowable from here, so
+		// ask the file. An encrypted key cannot be used by anything that will
+		// not prompt, and the verification that follows runs ssh with
+		// BatchMode=yes, so it has to go into the agent first or that check
+		// reports a working setup as broken.
+		encrypted, err := keys.IsEncrypted(a.Path)
+		if err != nil || !encrypted {
+			return err
+		}
+		return keys.AddToAgent(ctx, a.Path, opts.UseKeychain)
 
 	case plan.Chmod:
 		return os.Chmod(a.Path, a.Mode)
