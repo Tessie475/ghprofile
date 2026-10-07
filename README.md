@@ -25,11 +25,6 @@ generate a key, start the agent, add the key, paste it into GitHub, hand-edit
 remotes on repositories you already cloned, and set the git identity per
 repository.
 
-Every step is a place to get it quietly wrong. Commits land under the wrong
-email. A key pasted into the wrong account authenticates anyway, so nothing looks
-broken. None of it is re-runnable, so a new laptop means doing it again from
-memory.
-
 ## Install
 
 ### Homebrew
