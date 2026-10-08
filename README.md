@@ -43,7 +43,7 @@ curl -sSfL https://raw.githubusercontent.com/Tessie475/ghprofile/main/scripts/in
 <summary>Windows</summary>
 
 ```
-https://github.com/Tessie475/ghprofile/releases/download/v0.2.4/ghprofile_0.2.4_windows_amd64.zip
+https://github.com/Tessie475/ghprofile/releases/download/v0.2.5/ghprofile_0.2.5_windows_amd64.zip
 ```
 
 Unpack it and put `ghprofile.exe` on your `PATH`.
@@ -120,7 +120,8 @@ ghprofile fix-remote -all -write # apply
 | `apply` | Take over, generate keys, write config, upload keys, verify |
 | `plan` | Print pending changes. `-check` exits 2 when any exist |
 | `check` | Inspect the setup offline and report problems |
-| `verify` | Ask each host which account its key reaches |
+| `verify` | Ask each host which account its declared key reaches |
+| `keys` | Ask which account every key in `~/.ssh` reaches |
 | `show` | List declared identities |
 | `default <name>` | Choose the identity used where no other matches |
 | `remove <name>` | Drop an identity, leaving its key |
@@ -130,6 +131,17 @@ ghprofile fix-remote -all -write # apply
 | `init` | Write a starter profiles file |
 
 `check` reads files and opens no connection. `verify` opens a connection and reads no files.
+
+`keys` answers the question `add` cannot: a key's comment is whatever was typed when it was made, so it proves nothing about which account the key reaches. This asks the server.
+
+```
+KEY                           HOST        ACCOUNT          PROFILE
+~/.ssh/google_cloud_ed25519   github.com  no access        -
+~/.ssh/id_ed25519_work        github.com  Chukwu-Eberechi  -
+~/.ssh/personal_github        github.com  Tessie475        personal
+```
+
+A key already reaching the right account needs no replacement: `ghprofile add <name> -key <path>`.
 
 `ghprofile <command> -h` lists one command's flags.
 

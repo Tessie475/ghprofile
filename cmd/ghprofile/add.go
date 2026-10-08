@@ -10,6 +10,7 @@ import (
 
 	"github.com/Tessie475/ghprofile/internal/apply"
 	"github.com/Tessie475/ghprofile/internal/config"
+	"github.com/Tessie475/ghprofile/internal/keys"
 	"github.com/Tessie475/ghprofile/internal/shell"
 	"github.com/Tessie475/ghprofile/internal/sshconfig"
 )
@@ -153,8 +154,37 @@ func (a *app) cmdAdd(ctx context.Context, args []string) int {
 	} else {
 		fmt.Fprintln(a.out, "  applies   everywhere no other profile matches")
 	}
+	a.noteExistingKeys(p.Key)
 	fmt.Fprintln(a.out, "\nnext: ghprofile apply")
 	return exitOK
+}
+
+// noteExistingKeys points out the keys already on the machine when the profile
+// is about to generate a new one.
+//
+// Reusing a key is only inferred when a hand-written stanza names the same
+// alias, which misses the common case: one key, no ssh config, plain URLs. The
+// result was that someone with a working setup was told to generate and upload
+// a second key, with nothing saying -key existed.
+func (a *app) noteExistingKeys(chosen string) {
+	if _, err := os.Stat(chosen); err == nil {
+		return
+	}
+
+	existing, err := keys.Existing(a.paths.SSHDir)
+	if err != nil || len(existing) == 0 {
+		return
+	}
+
+	fmt.Fprintf(a.out, "\n  %s does not exist yet and apply will generate it.\n", chosen)
+	fmt.Fprintf(a.out, "  there %s already %d %s in %s.\n",
+		plural(len(existing), "is", "are"), len(existing),
+		plural(len(existing), "keypair", "keypairs"), a.paths.SSHDir)
+	// Deliberately not listing them with their comments. A comment is whatever
+	// was typed at keygen time and proves nothing about which account a key
+	// reaches; "keys" asks the server instead.
+	fmt.Fprintln(a.out, "  to see which account each one reaches:  ghprofile keys")
+	fmt.Fprintln(a.out, "  to reuse one:                           ghprofile add <name> -key <path>")
 }
 
 // ask prompts for a value, offering a default the user can accept with Enter.
@@ -277,4 +307,11 @@ func first(values []string) string {
 		return ""
 	}
 	return values[0]
+}
+
+func plural(n int, one, many string) string {
+	if n == 1 {
+		return one
+	}
+	return many
 }

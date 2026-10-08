@@ -20,25 +20,28 @@ import (
 
 const starter = `version: 1
 
-profiles:
-  - name: personal
-    host: github.com
-    alias: github-personal
-    key: ~/.ssh/id_ed25519_personal
-    user:
-      name: Your Name
-      email: you@example.com
-    default: true
-
-  - name: work
-    host: github.com
-    alias: github-work
-    key: ~/.ssh/id_ed25519_work
-    user:
-      name: Your Name
-      email: you@work.example.com
-    dirs:
-      - ~/work/
+# Each profile is one identity. "ghprofile add" writes these for you, so this
+# file is only worth editing by hand for something the flags do not cover.
+#
+# profiles:
+#   - name: personal
+#     host: github.com
+#     alias: github-personal
+#     key: ~/.ssh/id_ed25519_personal
+#     user:
+#       name: Your Name
+#       email: you@example.com
+#     default: true
+#
+#   - name: work
+#     host: github.com
+#     alias: github-work
+#     key: ~/.ssh/id_ed25519_work
+#     user:
+#       name: Your Name
+#       email: you@company.com
+#     dirs:
+#       - ~/work/
 `
 
 // parse handles flags that appear after positional arguments. Go's flag
@@ -71,9 +74,11 @@ func (a *app) load() (*config.Profiles, int) {
 	if err == nil {
 		return f, exitOK
 	}
-	if errors.Is(err, fs.ErrNotExist) {
-		fmt.Fprintf(a.errOut, "ghprofile: no profiles file at %s\n", a.paths.ProfilesFile)
-		fmt.Fprintln(a.errOut, "run: ghprofile init")
+	// An empty file reads the same way as a missing one to someone who has not
+	// declared anything yet, so both get the same advice.
+	if errors.Is(err, fs.ErrNotExist) || errors.Is(err, config.ErrNoProfiles) {
+		fmt.Fprintf(a.errOut, "ghprofile: no identities declared in %s\n", a.paths.ProfilesFile)
+		fmt.Fprintln(a.errOut, "run: ghprofile add personal --email you@example.com --default")
 		return nil, exitError
 	}
 	return nil, a.fail(err)

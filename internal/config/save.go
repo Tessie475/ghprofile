@@ -55,7 +55,10 @@ func LoadOrNew(path, home string) (*Profiles, error) {
 	}
 	// errors.Is, not os.IsNotExist: Load wraps with %w, and the legacy helper
 	// does not unwrap, so it would never match.
-	if errors.Is(err, fs.ErrNotExist) {
+	//
+	// ErrNoProfiles counts as a fresh start too. The starter file init writes
+	// declares nothing, and the caller is about to add the first profile.
+	if errors.Is(err, fs.ErrNotExist) || errors.Is(err, ErrNoProfiles) {
 		return &Profiles{Version: Version}, nil
 	}
 	return nil, err

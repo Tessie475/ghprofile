@@ -68,6 +68,38 @@ func (c *Checker) SSH(ctx context.Context, alias string) (Result, error) {
 	return r, nil
 }
 
+// Key reports which account a specific key file reaches on a host.
+//
+// Unlike SSH it names the key and bypasses the ssh config, so the answer is
+// about the key itself rather than about the configuration around it.
+//
+// IdentityAgent=none matters: with an agent running, ssh would offer the
+// agent's keys too and the greeting could name an account this key has nothing
+// to do with.
+func (c *Checker) Key(ctx context.Context, keyPath, host string) (Result, error) {
+	res, err := c.run(ctx, "ssh",
+		"-T",
+		"-o", "BatchMode=yes",
+		"-o", "IdentitiesOnly=yes",
+		"-o", "IdentityAgent=none",
+		"-o", "StrictHostKeyChecking=accept-new",
+		"-i", keyPath,
+		"git@"+host,
+	)
+
+	out := res.Stderr + res.Stdout
+	r := Result{Alias: host, Output: out}
+	if err != nil {
+		return r, err
+	}
+
+	if name, ok := ParseGreeting(out); ok {
+		r.Username = name
+		r.Authenticated = true
+	}
+	return r, nil
+}
+
 // Wait retries until the alias authenticates or the budget runs out, because a
 // freshly uploaded key is not always live immediately.
 func (c *Checker) Wait(ctx context.Context, alias string, budget time.Duration) (Result, error) {
@@ -116,6 +148,11 @@ func SSH(ctx context.Context, alias string) (Result, error) {
 // Wait retries one alias using the real ssh until it authenticates.
 func Wait(ctx context.Context, alias string, budget time.Duration) (Result, error) {
 	return New().Wait(ctx, alias, budget)
+}
+
+// Key checks one key file against one host using the real ssh.
+func Key(ctx context.Context, keyPath, host string) (Result, error) {
+	return New().Key(ctx, keyPath, host)
 }
 
 // waitFor sleeps, but gives up early if the caller is cancelled.

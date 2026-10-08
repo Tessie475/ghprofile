@@ -3,6 +3,7 @@ package gitconfig
 
 import (
 	"fmt"
+	"runtime"
 	"strings"
 
 	"github.com/Tessie475/ghprofile/internal/blocks"
@@ -48,8 +49,8 @@ func RenderIncludes(f *config.Profiles, pa paths.Paths) string {
 	var b strings.Builder
 	for _, p := range f.Profiles {
 		for _, dir := range p.Dirs {
-			fmt.Fprintf(&b, "[includeIf \"gitdir:%s\"]\n", dir)
-			fmt.Fprintf(&b, "\tpath = %s\n", pa.IdentityFile(p.Name))
+			fmt.Fprintf(&b, "[includeIf \"gitdir:%s\"]\n", gitPath(dir))
+			fmt.Fprintf(&b, "\tpath = %s\n", gitPath(pa.IdentityFile(p.Name)))
 		}
 	}
 	return b.String()
@@ -111,4 +112,26 @@ func HandWrittenEmail(content string) (string, bool) {
 		}
 	}
 	return "", false
+}
+
+// gitPath renders a filesystem path the way a git config file expects it.
+//
+// Git treats a backslash as an escape character inside a value, so a Windows
+// path written raw makes \U and \G invalid escapes and git rejects the whole
+// file with "bad config line". Git's own writer escapes them, which is why an
+// existing config shows C:\\Users\\you. Forward slashes avoid the question
+// entirely and git accepts them on every platform, including in gitdir:
+// patterns.
+func gitPath(p string) string {
+	return toGitPath(p, runtime.GOOS == "windows")
+}
+
+// toGitPath takes the platform as an argument so the conversion is testable
+// from any machine. Converting unconditionally would corrupt a Unix path that
+// legitimately contains a backslash.
+func toGitPath(p string, windows bool) string {
+	if !windows {
+		return p
+	}
+	return strings.ReplaceAll(p, `\`, "/")
 }

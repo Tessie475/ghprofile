@@ -1,6 +1,7 @@
 package gitconfig
 
 import (
+	"runtime"
 	"strings"
 	"testing"
 
@@ -136,5 +137,75 @@ func TestHandWrittenEmail(t *testing.T) {
 				t.Errorf("email = %q, want %q", got, tt.want)
 			}
 		})
+	}
+}
+
+// A Windows path written raw into a git config makes \U and \G invalid
+// escapes, and git rejects the entire file with "bad config line 3". Observed
+// on a real machine: every git command failed until the block was removed.
+func TestToGitPath(t *testing.T) {
+	tests := []struct {
+		name    string
+		path    string
+		windows bool
+		want    string
+	}{
+		{
+			name:    "windows path is converted",
+			path:    `C:\Users\GOKU\.config\ghprofile\gitconfig-personal`,
+			windows: true,
+			want:    "C:/Users/GOKU/.config/ghprofile/gitconfig-personal",
+		},
+		{
+			name:    "windows gitdir pattern, mixed separators",
+			path:    `C:\Users\GOKU\test-work/`,
+			windows: true,
+			want:    "C:/Users/GOKU/test-work/",
+		},
+		{
+			name:    "unix path is untouched",
+			path:    "/Users/me/.config/ghprofile/gitconfig-personal",
+			windows: false,
+			want:    "/Users/me/.config/ghprofile/gitconfig-personal",
+		},
+		{
+			// A backslash is a legal character in a Unix filename, so
+			// converting unconditionally would corrupt it.
+			name:    "a unix path containing a backslash is untouched",
+			path:    `/Users/me/odd\name/gitconfig`,
+			windows: false,
+			want:    `/Users/me/odd\name/gitconfig`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := toGitPath(tt.path, tt.windows); got != tt.want {
+				t.Errorf("toGitPath() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+// The whole file has to parse, so this asserts the rendered block contains no
+// single backslash at all when the paths are Windows-shaped.
+func TestRender_WindowsPathsCarryNoBackslashes(t *testing.T) {
+	f := &config.Profiles{Version: config.Version, Profiles: []config.Profile{
+		{Name: "personal", Host: "github.com", Alias: "github-personal", Key: `C:\k\p`, Default: true,
+			User: config.User{Name: "A", Email: "a@example.com"}},
+		{Name: "work", Host: "github.com", Alias: "github-work", Key: `C:\k\w`,
+			Dirs: []string{`C:\Users\GOKU\test-work/`},
+			User: config.User{Name: "B", Email: "b@example.org"}},
+	}}
+
+	pa := paths.Default(`C:\Users\GOKU`)
+	for _, body := range []string{RenderDefault(f, pa), RenderIncludes(f, pa)} {
+		if !strings.Contains(body, `\`) {
+			continue
+		}
+		// Only meaningful when the test runs on Windows, where gitPath acts.
+		if runtime.GOOS == "windows" {
+			t.Errorf("a backslash survived into the git config:\n%s", body)
+		}
 	}
 }

@@ -84,27 +84,42 @@ func TestRun_UnknownCommand(t *testing.T) {
 	}
 }
 
-func TestInitAndShow(t *testing.T) {
+func TestInit(t *testing.T) {
 	home := fakeHome(t)
 
 	if code, _, errOut := exec2(t, "init"); code != exitOK {
 		t.Fatalf("init exit = %d: %s", code, errOut)
 	}
-	if _, err := os.Stat(filepath.Join(home, ".config", "ghprofile", "profiles.yaml")); err != nil {
-		t.Fatalf("init wrote no profiles file: %v", err)
+
+	path := filepath.Join(home, ".config", "ghprofile", "profiles.yaml")
+	data := readFile(t, path)
+	if !strings.Contains(data, "version: 1") {
+		t.Errorf("starter file has no version:\n%s", data)
+	}
+	// The example is commented out, so it cannot collide with the add that
+	// comes next.
+	if strings.Contains(data, "\n  - name:") {
+		t.Errorf("starter file declares a live profile:\n%s", data)
 	}
 
 	// A second init must refuse rather than clobber.
 	if code, _, _ := exec2(t, "init"); code != exitError {
-		t.Errorf("second init exit = %d, want %d", code, exitError)
+		t.Error("second init should refuse to overwrite")
 	}
+}
+
+func TestShow(t *testing.T) {
+	home := fakeHome(t)
+	writeProfiles(t, home)
 
 	code, out, errOut := exec2(t, "show")
 	if code != exitOK {
 		t.Fatalf("show exit = %d: %s", code, errOut)
 	}
-	if !strings.Contains(out, "github-personal") {
-		t.Errorf("show output missing the alias:\n%s", out)
+	for _, want := range []string{"github-personal", "github-work", "NAME", "DEFAULT"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("show output missing %q:\n%s", want, out)
+		}
 	}
 }
 
@@ -693,4 +708,113 @@ func git(t *testing.T, home string, args ...string) string {
 		t.Fatalf("git %v: %v\n%s", args, err, out)
 	}
 	return string(out)
+}
+
+// The missing-file hint used to say "ghprofile init", which writes placeholder
+// profiles that then make the add it was steering towards fail with
+// "profile already exists".
+func TestLoad_MissingFileSuggestsAdd(t *testing.T) {
+	fakeHome(t)
+
+	code, _, errOut := exec2(t, "show")
+	if code != exitError {
+		t.Fatalf("show with no profiles exit = %d, want %d", code, exitError)
+	}
+	if !strings.Contains(errOut, "ghprofile add") {
+		t.Errorf("hint does not suggest add:\n%s", errOut)
+	}
+	if strings.Contains(errOut, "ghprofile init") {
+		t.Errorf("hint still steers into init, which then blocks add:\n%s", errOut)
+	}
+}
+
+// init used to write two placeholder profiles, so the add it told you to run
+// next failed with "profile already exists".
+func TestInit_ThenAddWorks(t *testing.T) {
+	fakeHome(t)
+
+	if code, _, errOut := exec2(t, "init"); code != exitOK {
+		t.Fatalf("init exit = %d: %s", code, errOut)
+	}
+
+	code, _, errOut := exec2(t, "add", "personal", "--email", "a@example.com", "--name", "A", "--default")
+	if code != exitOK {
+		t.Fatalf("add after init exit = %d: %s", code, errOut)
+	}
+	if strings.Contains(errOut, "already exists") {
+		t.Errorf("init wrote a profile that collides with add:\n%s", errOut)
+	}
+}
+
+// A file with no profiles reads the same as no file to someone who has not
+// declared anything, so it should give the same advice, not a validation error.
+func TestInit_EmptyFileSuggestsAdd(t *testing.T) {
+	fakeHome(t)
+
+	if code, _, _ := exec2(t, "init"); code != exitOK {
+		t.Fatal("init failed")
+	}
+
+	code, _, errOut := exec2(t, "show")
+	if code != exitError {
+		t.Fatalf("show exit = %d, want %d", code, exitError)
+	}
+	if !strings.Contains(errOut, "ghprofile add") {
+		t.Errorf("hint does not suggest add:\n%s", errOut)
+	}
+}
+
+// Someone with a working key should be told it exists, not silently sent to
+// generate a second one.
+func TestAdd_NotesExistingKeys(t *testing.T) {
+	home := fakeHome(t)
+
+	sshDir := filepath.Join(home, ".ssh")
+	if err := os.MkdirAll(sshDir, 0o700); err != nil {
+		t.Fatalf("setup: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(sshDir, "id_ed25519"), []byte("PRIVATE"), 0o600); err != nil {
+		t.Fatalf("setup: %v", err)
+	}
+	pub := "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIEQfP22gB37vYLQ4zXLaoUSVB1smpOfN+7oBj0oWre3y me@example.com\n"
+	if err := os.WriteFile(filepath.Join(sshDir, "id_ed25519.pub"), []byte(pub), 0o644); err != nil {
+		t.Fatalf("setup: %v", err)
+	}
+
+	code, out, errOut := exec2(t, "add", "personal", "--email", "me@example.com", "--name", "Me", "--default")
+	if code != exitOK {
+		t.Fatalf("add exit = %d: %s", code, errOut)
+	}
+
+	for _, want := range []string{"keypair", "ghprofile keys", "-key"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("add output does not mention %q:\n%s", want, out)
+		}
+	}
+	// A key comment is whatever was typed at keygen time, so listing a key
+	// beside it would imply knowledge the tool does not have. The old format
+	// was "~/.ssh/id_ed25519  (me@example.com)".
+	if strings.Contains(out, "(me@example.com)") {
+		t.Errorf("add is vouching for a key by its comment:\n%s", out)
+	}
+}
+
+// And says nothing when the chosen key already exists.
+func TestAdd_SaysNothingWhenTheKeyExists(t *testing.T) {
+	home := fakeHome(t)
+
+	sshDir := filepath.Join(home, ".ssh")
+	if err := os.MkdirAll(sshDir, 0o700); err != nil {
+		t.Fatalf("setup: %v", err)
+	}
+	key := filepath.Join(sshDir, "mine")
+	if err := os.WriteFile(key, []byte("PRIVATE"), 0o600); err != nil {
+		t.Fatalf("setup: %v", err)
+	}
+
+	_, out, _ := exec2(t, "add", "personal", "--email", "me@example.com", "--name", "Me",
+		"--key", "~/.ssh/mine", "--default")
+	if strings.Contains(out, "keys already on this machine") {
+		t.Errorf("suggested other keys when the chosen one exists:\n%s", out)
+	}
 }

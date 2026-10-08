@@ -144,3 +144,22 @@ func TestLoadOrNew_RealErrorsStillSurface(t *testing.T) {
 		t.Error("LoadOrNew() error = nil, want the parse failure to surface")
 	}
 }
+
+// init writes a file that declares nothing, and add is called next. Treating
+// that as an error made init a trap.
+func TestLoadOrNew_EmptyDocumentIsAFreshStart(t *testing.T) {
+	home := t.TempDir()
+	path := filepath.Join(home, "profiles.yaml")
+
+	if err := os.WriteFile(path, []byte("version: 1\n# nothing declared yet\n"), 0o600); err != nil {
+		t.Fatalf("setup: %v", err)
+	}
+
+	f, err := LoadOrNew(path, home)
+	if err != nil {
+		t.Fatalf("LoadOrNew() error = %v, want nil", err)
+	}
+	if len(f.Profiles) != 0 {
+		t.Errorf("got %d profiles, want none", len(f.Profiles))
+	}
+}

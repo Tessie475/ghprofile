@@ -72,6 +72,9 @@ func (a *app) uploadKey(ctx context.Context, f *config.Profiles, p *config.Profi
 	}
 
 	fmt.Fprintf(a.out, "\n%s needs its key on %s\n\n", p.Name, p.Host)
+	// The identity, because the profile name alone does not say which account
+	// to be signed in as, and finding out by reading the pasted key is late.
+	fmt.Fprintf(a.out, "  identity     %s <%s>\n", p.User.Name, p.User.Email)
 	fmt.Fprintf(a.out, "  key          %s\n", k.PublicPath)
 	fmt.Fprintf(a.out, "  fingerprint  %s\n", k.Fingerprint)
 	fmt.Fprintln(a.out)
@@ -95,7 +98,7 @@ func (a *app) uploadKey(ctx context.Context, f *config.Profiles, p *config.Profi
 		}
 	}
 
-	fmt.Fprintf(a.out, "\nmake sure the browser is signed in as the %s account, paste the key, save it,\nthen press Enter: ", p.Name)
+	fmt.Fprintf(a.out, "\nsign the browser in as %s, the %q account, then paste the key, save it,\nand press Enter: ", p.User.Email, p.Name)
 	_, _ = bufio.NewReader(a.in).ReadString('\n')
 
 	fmt.Fprintf(a.out, "\nchecking %s\n", p.Alias)

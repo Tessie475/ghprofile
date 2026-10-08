@@ -336,3 +336,45 @@ func TestWaitFor_ReturnsAfterTheDelay(t *testing.T) {
 		t.Errorf("waitFor() = %v, want nil", err)
 	}
 }
+
+// Key must name the key and shut the agent out, or the greeting could name an
+// account the key has nothing to do with.
+func TestKey_IsolatesTheKeyUnderTest(t *testing.T) {
+	f := newFake(response{res: shell.Result{Stderr: githubSuccess, Code: 1}})
+
+	got, err := f.checker().Key(context.Background(), "/home/u/.ssh/personal", "github.com")
+	if err != nil {
+		t.Fatalf("Key() error = %v", err)
+	}
+	if !got.Authenticated || got.Username != "Tessie475" {
+		t.Errorf("Key() = %+v, want an authenticated Tessie475", got)
+	}
+
+	joined := strings.Join(f.args[0], " ")
+	for _, want := range []string{
+		"-i /home/u/.ssh/personal",
+		"IdentitiesOnly=yes",
+		"IdentityAgent=none",
+		"BatchMode=yes",
+		"git@github.com",
+	} {
+		if !strings.Contains(joined, want) {
+			t.Errorf("ssh args missing %q: %v", want, f.args[0])
+		}
+	}
+}
+
+func TestKey_NoAccess(t *testing.T) {
+	f := newFake(response{res: shell.Result{
+		Stderr: "git@github.com: Permission denied (publickey).\n",
+		Code:   1,
+	}})
+
+	got, err := f.checker().Key(context.Background(), "/home/u/.ssh/gcp", "github.com")
+	if err != nil {
+		t.Fatalf("Key() error = %v", err)
+	}
+	if got.Authenticated {
+		t.Error("a key with no access reported as authenticated")
+	}
+}

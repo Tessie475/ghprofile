@@ -431,3 +431,60 @@ Anything else returns `ErrUnsupportedKeyFormat`, which is distinct from
 error rather than "not encrypted", because claiming a key is unencrypted when it
 cannot be read would skip the agent step and make verification fail for a reason
 the user could not act on.
+
+### Git config paths use forward slashes
+
+`gitconfig` writes every path through `gitPath`, which converts separators on
+Windows. Writing `filepath.Join`'s output raw produced:
+
+    [include]
+        path = C:\Users\GOKU\.config\ghprofile\gitconfig-personal
+
+Git treats a backslash as an escape character inside a value, so `\U` and `\G`
+are invalid escapes and git rejects the **whole file**:
+
+    fatal: bad config line 3 in file C:/Users/GOKU/.gitconfig
+
+Every git command on that machine failed until the managed blocks were deleted
+by hand. Worse than the tool not working, since the tool had already finished.
+
+The same applied to `gitdir:` patterns, which came out doubly wrong:
+backslashes from `filepath.Join` and a trailing forward slash from
+`withTrailingSlash`.
+
+Git's own writer escapes them instead, which is visible in any existing Windows
+config as `C:\\Users\\you`. Forward slashes avoid the question and git
+accepts them everywhere, including in `gitdir:`.
+
+`toGitPath` takes the platform as an argument rather than reading
+`runtime.GOOS` directly, so the conversion is testable from a Mac. Converting
+unconditionally would be wrong: a backslash is a legal character in a Unix
+filename.
+
+This shipped in v0.2.4 and was found by the first person to run ghprofile on
+Windows. Nothing in the test suite could have caught it, because `filepath`
+behaves correctly per platform and every test ran on macOS.
+
+### keys asks the server, because a comment proves nothing
+
+`add` reuses an existing key only when a hand-written stanza names the same
+alias. That misses the common case: one key, no ssh config, plain URLs. Someone
+with a working setup was told to generate and upload a second key, with nothing
+saying `-key` existed.
+
+The first fix listed the keypairs in `~/.ssh` with their comments. That was
+worse than useless on a real machine:
+
+    ~/.ssh/google_cloud_ed25519  (echukwu@chisquares.com)
+
+A comment is a label typed at `ssh-keygen` time. That key is a Google Cloud key
+carrying a work email and has no GitHub access at all. Listing it beside a work
+profile suggestion implies a relationship that does not exist.
+
+`ghprofile keys` asks instead, through `verify.Checker.Key`, which names the key
+with `-i` and sets `IdentitiesOnly=yes` and `IdentityAgent=none`. The agent
+exclusion matters: with an agent loaded, ssh would offer its keys too and the
+greeting could name an account the key under test has nothing to do with.
+
+`add` now reports only the count and points at `keys`, rather than vouching for
+a filename it cannot vouch for.

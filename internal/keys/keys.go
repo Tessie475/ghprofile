@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"io/fs"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/Tessie475/ghprofile/internal/shell"
@@ -304,4 +305,32 @@ func isKeyType(field string) bool {
 		}
 	}
 	return false
+}
+
+// Existing returns the complete keypairs already in a directory.
+//
+// Someone with a working key and a working account should not be told to
+// generate a second one, and nothing surfaced that the choice existed.
+func Existing(dir string) ([]Key, error) {
+	entries, err := os.ReadDir(dir)
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("read %s: %w", dir, err)
+	}
+
+	var out []Key
+	for _, e := range entries {
+		if e.IsDir() || !strings.HasSuffix(e.Name(), ".pub") {
+			continue
+		}
+
+		k, err := Inspect(filepath.Join(dir, strings.TrimSuffix(e.Name(), ".pub")))
+		if err != nil || !k.Complete() {
+			continue
+		}
+		out = append(out, k)
+	}
+	return out, nil
 }

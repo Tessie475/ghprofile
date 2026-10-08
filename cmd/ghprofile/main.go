@@ -50,6 +50,7 @@ Commands:
   plan           Show what apply would change, without changing it
   check          Inspect your setup and report problems, offline
   verify         Ask each host which account its key reaches, online
+  keys           Ask which account every key in ~/.ssh reaches
   upload <name>  Re-run just the clipboard and browser handoff for one identity
   adopt          Take over hand-written host stanzas
   fix-remote     Rewrite a repository's remote to the right host alias
@@ -120,6 +121,8 @@ func run(ctx context.Context, args []string, in io.Reader, out, errOut io.Writer
 	case "apply":
 		return a.cmdApply(ctx, args[1:])
 	// doctor is the brew and flutter convention, kept working but undocumented.
+	case "keys":
+		return a.cmdKeys(ctx, args[1:])
 	case "check", "doctor":
 		return a.cmdCheck(ctx, args[1:])
 	case "adopt":
