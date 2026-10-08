@@ -27,57 +27,40 @@ repository.
 
 ## Install
 
-### Homebrew
-
 ```bash
 brew install Tessie475/tap/ghprofile
 ```
 
-One command. Homebrew taps automatically when you give the full name, so there
-is no separate step. Upgrades come through `brew upgrade` like anything else.
-
-Naming the cask in full also satisfies Homebrew's tap trust check, which has
-been required since Homebrew 7.0. Taps are repositories of Ruby that `brew`
-executes in order to read them, so Homebrew now wants your consent before
-loading code from anyone who is not an official tap. Spelling out
-`Tessie475/tap/ghprofile` is that consent.
-
-Which means the short form needs trusting the tap first, or it is refused:
-
-```bash
-brew trust Tessie475/tap && brew install ghprofile
-```
-
-Worth pausing over rather than pasting. That trusts **every** formula and cask
-this tap ships, now and in future. If you would rather trust only this one
-thing, keep using the full name, or:
-
-```bash
-brew trust --cask Tessie475/tap/ghprofile
-```
-
-### Download a binary
-
-Every release publishes builds for macOS and Linux on amd64 and arm64, plus
-Windows amd64, with a checksums file. Grab yours from
-[the releases page](https://github.com/Tessie475/ghprofile/releases), then:
-
-Substitute the version and your platform:
-
-```bash
-shasum -a 256 -c ghprofile_<version>_checksums.txt --ignore-missing
-```
-
-```bash
-tar -xzf ghprofile_<version>_darwin_arm64.tar.gz ghprofile && sudo mv ghprofile /usr/local/bin/
-```
+Homebrew taps and trusts it automatically when you give the full name. Upgrades
+come through `brew upgrade` like anything else.
 
 <details>
-<summary>Script install, for Linux without Homebrew</summary>
+<summary>Without Homebrew</summary>
 
-[`scripts/install.sh`](scripts/install.sh) picks the right build, verifies it
-against the published checksums, and installs it. Download and read it before
-you run it:
+Every release publishes builds for macOS and Linux on amd64 and arm64, plus
+Windows amd64, with a checksums file. Pick yours from
+[the latest release](https://github.com/Tessie475/ghprofile/releases/latest),
+then unpack it and put it on your `PATH`:
+
+```bash
+tar -xzf ghprofile_*_darwin_arm64.tar.gz ghprofile && sudo mv ghprofile /usr/local/bin/
+```
+
+Every release also ships a `checksums.txt`. If you want to confirm the download
+was not tampered with in transit, which matters more for a tool that handles SSH
+keys than for most:
+
+```bash
+shasum -a 256 -c ghprofile_*_checksums.txt --ignore-missing
+```
+
+</details>
+
+<details>
+<summary>Linux, with a script</summary>
+
+[`scripts/install.sh`](scripts/install.sh) picks the right build, verifies the
+checksum, and installs it. Download and read it first:
 
 ```bash
 curl -sSfLO https://raw.githubusercontent.com/Tessie475/ghprofile/main/scripts/install.sh
@@ -96,7 +79,7 @@ touches your SSH keys.
 </details>
 
 <details>
-<summary>If you have Go</summary>
+<summary>With Go</summary>
 
 ```bash
 go install github.com/Tessie475/ghprofile/cmd/ghprofile@latest
@@ -113,13 +96,6 @@ Or build from a checkout with `make build`.
 
 </details>
 
-| You have | Install with | Taps involved |
-|---|---|---|
-| Homebrew | `brew install Tessie475/tap/ghprofile` | none, it is automatic |
-| neither | a binary from the releases page | none |
-| Linux, no Homebrew | `scripts/install.sh` | none |
-| Go | `go install ...@latest` | none |
-
 Check it worked, and quote this when reporting a problem:
 
 ```bash
@@ -132,27 +108,40 @@ helpers have Linux paths but have not been exercised there.
 
 ## Getting started
 
+Declare each identity:
+
 ```bash
 ghprofile add personal --email you@gmail.com --default
+```
+
+```bash
 ghprofile add work --email you@company.com --dir ~/company/
-ghprofile apply
 ```
 
 In `add work`, the word `work` is a label you choose. It names the profile and
 builds its SSH alias, so `work` gives you `github-work`. Use whatever describes
-the account to you: `work`, `personal`, `clientx`, `oss`.
-
-Run `ghprofile add` with no flags and it will ask instead.
+the account to you: `work`, `personal`, `clientx`, `oss`. Run `ghprofile add`
+with no flags and it will ask instead.
 
 The profile marked `--default` supplies your global git identity. Every other
 profile applies inside the directories it names, so a repository under
 `~/company/` commits as your work identity automatically.
 
-Rehearse before committing to anything:
+See what that would change, without changing it:
 
 ```bash
 ghprofile apply -dry-run
 ```
+
+Then do it:
+
+```bash
+ghprofile apply
+```
+
+`apply` generates any missing keys, writes your SSH and git config, and walks
+you through putting each new key on its account. It asks before it writes
+anything irreversible.
 
 ### Cloning
 
