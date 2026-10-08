@@ -4,26 +4,21 @@
 [![Go Reference](https://pkg.go.dev/badge/github.com/Tessie475/ghprofile.svg)](https://pkg.go.dev/github.com/Tessie475/ghprofile)
 [![Go Report Card](https://goreportcard.com/badge/github.com/Tessie475/ghprofile)](https://goreportcard.com/report/github.com/Tessie475/ghprofile)
 
-Use two GitHub accounts from one machine, in two commands.
+`ghprofile` is a command line tool for using several Git accounts from one machine without per-repository setup.
 
-```bash
-ghprofile add work --email you@company.com --dir ~/company/
-ghprofile apply
-```
+It reads a declarative profiles file, compares it against the real state of `~/.ssh/config`, `~/.gitconfig` and the key files, and reconciles the difference. Keys, host aliases, commit identities and remotes all derive from that one file.
 
-That generates a key, walks you through putting it on the right account, writes
-the SSH host alias, and makes every repository under `~/company/` commit as your
-work identity. No per-repository setup, and nothing to remember next time.
+Separating two accounts by hand is a ten step runbook that is easy to get subtly wrong and impossible to re-run. This replaces it with two commands.
 
----
+## What It Does
 
-## The problem
-
-Separating a work and a personal account normally means a ten-step runbook:
-generate a key, start the agent, add the key, paste it into GitHub, hand-edit
-`~/.ssh/config`, test the connection, clone with the right host alias, fix the
-remotes on repositories you already cloned, and set the git identity per
-repository.
+- generates an SSH key per account and walks through putting it on the right one
+- writes a `Host` alias per account into `~/.ssh/config`
+- scopes a commit identity to a directory with git's `includeIf`, so no repository needs its own config
+- reports which account each key actually reaches, rather than whether a connection succeeded
+- rewrites existing remotes onto the correct alias
+- takes over hand-written stanzas that would shadow its own
+- preserves everything outside its markers byte for byte, with a timestamped backup before each overwrite
 
 ## Install
 
@@ -31,24 +26,16 @@ repository.
 brew install Tessie475/tap/ghprofile
 ```
 
-Homebrew taps and trusts it automatically when you give the full name. Upgrades
-come through `brew upgrade` like anything else.
-
 <details>
 <summary>Without Homebrew</summary>
 
-Every release publishes builds for macOS and Linux on amd64 and arm64, plus
-Windows amd64, with a checksums file. Pick yours from
-[the latest release](https://github.com/Tessie475/ghprofile/releases/latest),
-then unpack it and put it on your `PATH`:
+Builds for macOS and Linux on amd64 and arm64, plus Windows amd64, are attached to [the latest release](https://github.com/Tessie475/ghprofile/releases/latest).
 
 ```bash
 tar -xzf ghprofile_*_darwin_arm64.tar.gz ghprofile && sudo mv ghprofile /usr/local/bin/
 ```
 
-Every release also ships a `checksums.txt`. If you want to confirm the download
-was not tampered with in transit, which matters more for a tool that handles SSH
-keys than for most:
+Each release also ships `checksums.txt`:
 
 ```bash
 shasum -a 256 -c ghprofile_*_checksums.txt --ignore-missing
@@ -59,8 +46,7 @@ shasum -a 256 -c ghprofile_*_checksums.txt --ignore-missing
 <details>
 <summary>Linux, with a script</summary>
 
-[`scripts/install.sh`](scripts/install.sh) picks the right build, verifies the
-checksum, and installs it. Download and read it first:
+[`scripts/install.sh`](scripts/install.sh) selects the right build, verifies its checksum, and installs it.
 
 ```bash
 curl -sSfLO https://raw.githubusercontent.com/Tessie475/ghprofile/main/scripts/install.sh
@@ -70,11 +56,9 @@ curl -sSfLO https://raw.githubusercontent.com/Tessie475/ghprofile/main/scripts/i
 less install.sh && sh install.sh
 ```
 
-`GHPROFILE_BIN_DIR` chooses where it lands, `GHPROFILE_VERSION` pins a version.
+`GHPROFILE_BIN_DIR` sets the install directory, `GHPROFILE_VERSION` pins a version.
 
-It is deliberately not documented as `curl ... | sh`. Piping a remote script
-straight into a shell is worth refusing on any tool, and more so on one that
-touches your SSH keys.
+It is deliberately not documented as `curl ... | sh`.
 
 </details>
 
@@ -85,30 +69,21 @@ touches your SSH keys.
 go install github.com/Tessie475/ghprofile/cmd/ghprofile@latest
 ```
 
-`go install` puts the binary in `$(go env GOPATH)/bin`, which is **not** on your
-`PATH` by default. If `ghprofile` comes back as "command not found", that is why:
+The binary lands in `$(go env GOPATH)/bin`, which is not on `PATH` by default:
 
 ```bash
 echo 'export PATH="$PATH:$(go env GOPATH)/bin"' >> ~/.zshrc && source ~/.zshrc
 ```
 
-Or build from a checkout with `make build`.
+`make build` builds from a checkout.
 
 </details>
 
-Check it worked, and quote this when reporting a problem:
+Requires `git` and `ssh-keygen`. Developed and tested on macOS. The Linux clipboard and browser paths exist but are unexercised.
 
-```bash
-ghprofile version
-```
+## Usage
 
-Needs `git` and `ssh-keygen`, which you already have if you use SSH with GitHub.
-Developed and tested on macOS. Linux should work: the clipboard and browser
-helpers have Linux paths but have not been exercised there.
-
-## Getting started
-
-Declare each identity:
+Declare each identity. The name is an arbitrary label that also forms the SSH alias, so `work` produces `github-work`.
 
 ```bash
 ghprofile add personal --email you@gmail.com --default
@@ -118,92 +93,59 @@ ghprofile add personal --email you@gmail.com --default
 ghprofile add work --email you@company.com --dir ~/company/
 ```
 
-In `add work`, the word `work` is a label you choose. It names the profile and
-builds its SSH alias, so `work` gives you `github-work`. Use whatever describes
-the account to you: `work`, `personal`, `clientx`, `oss`. Run `ghprofile add`
-with no flags and it will ask instead.
+`add` with no flags prompts instead. The `--default` profile supplies the global git identity; every other profile applies inside the directories it names.
 
-The profile marked `--default` supplies your global git identity. Every other
-profile applies inside the directories it names, so a repository under
-`~/company/` commits as your work identity automatically.
-
-See what that would change, without changing it:
+Preview:
 
 ```bash
 ghprofile apply -dry-run
 ```
 
-Then do it:
+Apply:
 
 ```bash
 ghprofile apply
 ```
 
-`apply` generates any missing keys, writes your SSH and git config, and walks
-you through putting each new key on its account. It asks before it writes
-anything irreversible.
+`apply` generates missing keys, writes the SSH and git configuration, then checks each alias and opens a browser for any key the host does not recognise.
 
-### Cloning
-
-Clone through the alias and the right key is used:
+Clone through the alias:
 
 ```bash
 git clone git@github-work:company/service.git
 ```
 
-Already cloned over HTTPS or a plain URL? Fix them in one pass:
+Existing remotes are rewritten in one pass:
 
 ```bash
-ghprofile fix-remote -all        # shows what would change
-ghprofile fix-remote -all -write # does it
+ghprofile fix-remote -all        # preview
+ghprofile fix-remote -all -write # apply
 ```
-
-## What it does to your machine
-
-Four kinds of thing, and it owns none of your file beyond its own markers:
-
-| File | What it adds |
-|---|---|
-| `~/.ssh/config` | one `Host` stanza per profile, inside `# BEGIN ghprofile:<name>` markers |
-| `~/.gitconfig` | two managed blocks holding `include` and `includeIf` directives |
-| `~/.config/ghprofile/gitconfig-<name>` | the commit identity for one profile |
-| `~/.ssh/id_ed25519_<name>` | a new key, only when the one you named does not exist |
-
-Everything outside those markers is preserved byte for byte, including comments,
-blank lines and indentation. Before overwriting anything it writes a timestamped
-`.ghprofile-backup-<UTC>` copy, once per file per run, and every write is atomic,
-so an interrupted run cannot leave a half-written config behind.
-
-It never uploads a key without showing you, never asks for a token, and never
-touches a `Host` stanza no profile claims.
 
 ## Commands
 
-| Command | What it does |
+| Command | Description |
 |---|---|
-| `add <name>` | Adds an identity, inferring the alias, key path and commit name |
-| `apply` | Does everything: take over, keygen, config, key upload, checks. `-no-passphrase` to skip the passphrase prompt |
-| `plan` | Shows what `apply` would change. `-check` exits 2 when changes are pending |
-| `check` | Inspects your setup offline and reports problems, fixing nothing |
-| `verify` | Asks each host which account its key reaches. Needs the network |
-| `show` | Lists the identities you have declared |
-| `default <name>` | Chooses which identity applies everywhere else |
-| `remove <name>` | Drops an identity. Leaves its key alone |
-| `upload <name>` | Re-runs just the clipboard and browser handoff |
-| `adopt` | Takes over hand-written stanzas that shadow a managed one |
-| `fix-remote` | Rewrites a repository's remote to the right alias |
-| `init` | Writes a starter profiles file to edit by hand instead |
+| `add <name>` | Add an identity, inferring the alias, key path and commit name |
+| `apply` | Take over, generate keys, write config, upload keys, verify |
+| `plan` | Print pending changes. `-check` exits 2 when any exist |
+| `check` | Inspect the setup offline and report problems |
+| `verify` | Ask each host which account its key reaches |
+| `show` | List declared identities |
+| `default <name>` | Choose the identity used where no other matches |
+| `remove <name>` | Drop an identity, leaving its key |
+| `upload <name>` | Re-run the clipboard and browser handoff |
+| `adopt` | Take over hand-written stanzas that shadow a managed one |
+| `fix-remote` | Rewrite a repository's remote to the correct alias |
+| `init` | Write a starter profiles file |
 
-`check` and `verify` divide the work by where they look. `check` reads your files
-and never opens a connection. `verify` opens a connection and never reads your
-files. If something is wrong and you do not know which to run, run `check`.
+`check` reads files and opens no connection. `verify` opens a connection and reads no files.
 
-Run `ghprofile <command> -h` for one command's flags.
+`ghprofile <command> -h` lists one command's flags.
 
-## The profiles file
+## Configuration
 
-`~/.config/ghprofile/profiles.yaml` is the desired state. `add` writes it for
-you, but it is plain YAML and yours to edit.
+`~/.config/ghprofile/profiles.yaml` is the desired state. `add` writes it.
 
 ```yaml
 version: 1
@@ -231,149 +173,83 @@ profiles:
       ServerAliveInterval: "60"
 ```
 
-`options` adds extra directives to that profile's `Host` stanza. Use it to carry
-across anything you had hand-written, such as keepalives or a `ProxyJump`, so
-that adopting a stanza does not quietly lose settings. The directives ghprofile
-always writes cannot be overridden this way.
+| Field | Description |
+|---|---|
+| `host` | the real hostname. GitHub, GitLab, Bitbucket and self-hosted all work |
+| `alias` | the SSH `Host` pattern used in place of `host` when cloning |
+| `dirs` | directory prefixes where this identity applies, via `gitdir:` |
+| `default` | supplies the global identity. At most one profile |
+| `options` | extra directives for this profile's `Host` stanza, such as `ProxyJump` |
+| `claim_host` | the default profile also answers a plain `git@host:` URL |
 
-`host` is not assumed to be GitHub. GitLab, Bitbucket and self-hosted work the
-same way:
+`options` exists so that adopting a hand-written stanza does not discard what it carried.
 
-```yaml
-  - name: clientx
-    host: gitlab.example.com
-    alias: gitlab-clientx
-    key: ~/.ssh/id_ed25519_clientx
-    user:
-      name: Your Name
-      email: you@clientx.com
-    dirs:
-      - ~/clients/x/
-```
+## What It Writes
 
-## Key passphrases
+| Path | Contents |
+|---|---|
+| `~/.ssh/config` | one `Host` stanza per profile, inside `# BEGIN ghprofile:<name>` markers |
+| `~/.gitconfig` | two managed blocks holding `include` and `includeIf` directives |
+| `~/.config/ghprofile/gitconfig-<name>` | the commit identity for one profile |
+| `~/.ssh/id_ed25519_<name>` | a key, only when the declared path does not exist |
 
-When `apply` generates a key, `ssh-keygen` asks you for a passphrase, exactly as
-it does when you follow GitHub's own instructions:
+Content outside the markers is preserved byte for byte. Each file is copied to `<path>.ghprofile-backup-<UTC>` once per run before its first overwrite, and every write is atomic.
 
-```
-Enter passphrase for "/Users/you/.ssh/id_ed25519_work" (empty for no passphrase):
-Enter same passphrase again:
-```
+## Key Passphrases
 
-**Press Enter twice to decline.** The key is then written unencrypted, which is
-what most people do and is a reasonable choice on a machine you trust.
+`ssh-keygen` prompts when `apply` generates a key, as it does when following GitHub's own instructions. An empty answer declines and writes an unencrypted key.
 
-### What declining costs you
+An unencrypted key file is itself the credential: anything able to read it can authenticate. A passphrase makes the file useless on its own. Neither protects an unlocked session, where the agent already holds the key.
 
-Without a passphrase the key file *is* the credential. Anything that can read
-`~/.ssh/id_ed25519_work` can push as you: a backup on an unencrypted drive, a
-home directory that got synced somewhere, a package's install script, a stolen
-laptop. With one, the file alone is useless.
+Setting one costs a second prompt from `ssh-add`. On macOS the passphrase is then stored in the login keychain and never requested again, because the rendered stanza carries `AddKeysToAgent yes` and `UseKeychain yes`. On Linux expect one prompt per login session.
 
-It protects a file at rest. It does not protect an unlocked session, where the
-agent already holds the key.
+The agent step is required rather than cosmetic. Verification runs `ssh -o BatchMode=yes` so it cannot hang, and BatchMode also forbids the passphrase prompt, so an encrypted key outside the agent cannot be unlocked.
 
-### What accepting costs you
+A passphrase is a new secret, unrelated to any account password, and the host never sees it. There is no reset, but SSH keys carry no history or identity: delete the key, generate another, upload the public half.
 
-Almost nothing on macOS. If you set a passphrase, ghprofile runs `ssh-add
---apple-use-keychain` straight afterwards, so you are asked once more and then
-macOS stores it in your login keychain. Every `git push` after that is silent,
-including across reboots. On Linux there is no keychain equivalent, so expect a
-prompt once per login session.
-
-That second step is not cosmetic. Verification runs `ssh -o BatchMode=yes` so it
-can never hang, but BatchMode also forbids the passphrase prompt, so a key that
-is encrypted and not in the agent would make the check fail and report a working
-setup as broken.
-
-### Forgetting it
-
-There is no reset, but very little is at stake. The passphrase is probably in
-your login keychain already: open Keychain Access and search for the key's path.
-And if it is not, keys are access tokens rather than identity. Nothing is tied
-to them, no repositories, no commits, no history. Delete the key, generate
-another, upload the new public half, remove the old one. Five minutes.
-
-The passphrase is a new secret you invent at the prompt. It is not your GitHub
-password, and GitHub never sees it or knows it exists. It unlocks a local file,
-nothing more.
-
-### Scripts
-
-```bash
-ghprofile apply -no-passphrase
-```
-
-With stdin closed, `ssh-keygen` reads EOF as an empty passphrase and carries on
-rather than hanging, so CI works either way. The flag is for saying so on
-purpose instead of relying on that.
+`-no-passphrase` skips the prompt. With stdin closed, `ssh-keygen` reads EOF as an empty passphrase, so unattended use works either way.
 
 ## Plain URLs
 
-A plain `git clone git@github.com:owner/repo.git` matches no alias, so SSH offers
-whatever key your agent happens to hold. That usually works, and silently changes
-after a reboot.
+A plain `git@github.com:owner/repo` matches no alias, so SSH offers whatever the agent holds. That usually works and changes after a reboot.
 
-ghprofile does **not** fix this by default, because fixing it means restricting
-every plain connection to that host. If you want it pinned:
+ghprofile does not pin this by default, because pinning restricts every plain connection to that host:
 
 ```bash
 ghprofile default personal -claim-host
 ```
 
-The stanza then reads `Host github-personal github.com`, and because it carries
-`IdentitiesOnly yes`, a plain URL offers **only** that profile's key.
-Repositories on a different account still using plain URLs will stop
-authenticating until you point them at that account's alias, which
-`ghprofile fix-remote -all` does. The command explains that and asks before
-changing anything.
+The stanza then reads `Host github-personal github.com`, and `IdentitiesOnly yes` means a plain URL offers only that profile's key. Repositories on another account still using plain URLs stop authenticating until `ghprofile fix-remote -all` moves them to their alias. The command explains this and asks first. `-no-claim-host` reverses it.
 
-`-no-claim-host` reverses it. `check` mentions the unpinned state as information,
-never as a problem to fix.
-
-## Exit codes
+## Exit Codes
 
 | Code | Meaning |
 |---|---|
 | 0 | Success, or no changes pending under `-check` |
-| 1 | Something went wrong |
+| 1 | Failure |
 | 2 | `plan -check` only: changes are pending |
 | 3 | Bad flags or unknown command |
 
-Code 2 mirrors `terraform plan -detailed-exitcode`, so `ghprofile plan -check`
-can gate a CI job asserting that a machine is configured.
+Code 2 mirrors `terraform plan -detailed-exitcode`, so `ghprofile plan -check` can gate a CI job.
 
-## Out of scope
+## Out Of Scope
 
-HTTPS token auth, which is `gh auth`'s job. GPG signing. A TUI. Managing non-Git
-SSH hosts. Telemetry of any kind.
+HTTPS token auth, which `gh auth` covers. GPG signing. A TUI. Non-Git SSH hosts. Telemetry.
 
 ## Development
 
 ```bash
 make check   # go vet + go test -race
-make test
-make lint    # needs golangci-lint
+make lint    # installs the pinned golangci-lint if absent
 make help    # list targets
 ```
 
-`GHPROFILE_HOME` overrides the home directory, which is how the tests drive the
-CLI against a temporary directory without touching the real one.
+`GHPROFILE_HOME` overrides the home directory, which is how the tests drive the CLI against a temporary directory.
 
-Never test a change against your own dotfiles. Use the sandbox, which copies them
-somewhere temporary and runs the whole flow there:
+`./scripts/sandbox.sh -k` copies the real dotfiles into a temporary directory and runs the whole flow there. Changes should never be tested against live config.
 
-```bash
-./scripts/sandbox.sh -k
-```
-
-- [docs/design-notes.md](docs/design-notes.md) explains why the code is shaped
-  the way it is. Source files carry one-line comments only, so anything needing a
-  paragraph lives there
-- [CONTRIBUTING.md](CONTRIBUTING.md) has the house rules
-- [docs/releasing.md](docs/releasing.md) covers cutting a release and the tap setup
+[docs/design-notes.md](docs/design-notes.md) covers why the code is shaped as it is; source files carry one-line comments only. [CONTRIBUTING.md](CONTRIBUTING.md) has the house rules. [docs/releasing.md](docs/releasing.md) covers cutting a release.
 
 ## License
 
-[MIT](LICENSE)
+MIT
