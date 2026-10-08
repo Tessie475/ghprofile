@@ -42,7 +42,11 @@ curl -sSfL https://raw.githubusercontent.com/Tessie475/ghprofile/main/scripts/in
 <details>
 <summary>Windows</summary>
 
-Download `ghprofile_0.2.4_windows_amd64.zip` from [the latest release](https://github.com/Tessie475/ghprofile/releases/latest), unpack it, and put `ghprofile.exe` on your `PATH`.
+```
+https://github.com/Tessie475/ghprofile/releases/download/v0.2.4/ghprofile_0.2.4_windows_amd64.zip
+```
+
+Unpack it and put `ghprofile.exe` on your `PATH`.
 
 Needs `git` and `ssh-keygen`, both of which [Git for Windows](https://gitforwindows.org) provides.
 
