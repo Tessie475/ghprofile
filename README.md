@@ -29,36 +29,13 @@ brew install Tessie475/tap/ghprofile
 <details>
 <summary>Without Homebrew</summary>
 
-Builds for macOS and Linux on amd64 and arm64, plus Windows amd64, are attached to [the latest release](https://github.com/Tessie475/ghprofile/releases/latest).
-
 ```bash
-tar -xzf ghprofile_*_darwin_arm64.tar.gz ghprofile && sudo mv ghprofile /usr/local/bin/
+curl -sSfL https://raw.githubusercontent.com/Tessie475/ghprofile/main/scripts/install.sh | sh
 ```
 
-Each release also ships `checksums.txt`:
-
-```bash
-shasum -a 256 -c ghprofile_*_checksums.txt --ignore-missing
-```
-
-</details>
-
-<details>
-<summary>Linux, with a script</summary>
-
-[`scripts/install.sh`](scripts/install.sh) selects the right build, verifies its checksum, and installs it.
-
-```bash
-curl -sSfLO https://raw.githubusercontent.com/Tessie475/ghprofile/main/scripts/install.sh
-```
-
-```bash
-less install.sh && sh install.sh
-```
+[`scripts/install.sh`](scripts/install.sh) selects the right build for the platform, verifies its checksum against the release, and installs to `/usr/local/bin` or `~/.local/bin`.
 
 `GHPROFILE_BIN_DIR` sets the install directory, `GHPROFILE_VERSION` pins a version.
-
-It is deliberately not documented as `curl ... | sh`.
 
 </details>
 
