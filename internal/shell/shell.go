@@ -64,21 +64,37 @@ func Copy(ctx context.Context, text string) error {
 
 // Open asks the desktop to open a URL or file.
 func Open(ctx context.Context, target string) error {
-	name := "xdg-open"
-	if runtime.GOOS == "darwin" {
-		name = "open"
-	}
+	name, args := openCommand(target)
+
 	if _, err := exec.LookPath(name); err != nil {
 		return fmt.Errorf("%s: %w", name, ErrNoCommand)
 	}
-	if _, err := Run(ctx, name, target); err != nil {
+	if _, err := Run(ctx, name, args...); err != nil {
 		return err
 	}
 	return nil
 }
 
+func openCommand(target string) (string, []string) {
+	switch runtime.GOOS {
+	case "darwin":
+		return "open", []string{target}
+	case "windows":
+		// start is a cmd builtin, and its first argument is a window title.
+		return "cmd", []string{"/c", "start", "", target}
+	default:
+		return "xdg-open", []string{target}
+	}
+}
+
 func clipboardCommand() (string, []string, error) {
-	candidates := [][]string{{"pbcopy"}, {"wl-copy"}, {"xclip", "-selection", "clipboard"}, {"xsel", "--clipboard", "--input"}}
+	candidates := [][]string{
+		{"pbcopy"},
+		{"clip"},
+		{"wl-copy"},
+		{"xclip", "-selection", "clipboard"},
+		{"xsel", "--clipboard", "--input"},
+	}
 	for _, c := range candidates {
 		if _, err := exec.LookPath(c[0]); err == nil {
 			return c[0], c[1:], nil

@@ -27,7 +27,7 @@ brew install Tessie475/tap/ghprofile
 ```
 
 <details>
-<summary>Without Homebrew</summary>
+<summary>Install script</summary>
 
 ```bash
 curl -sSfL https://raw.githubusercontent.com/Tessie475/ghprofile/main/scripts/install.sh | sh
@@ -36,6 +36,15 @@ curl -sSfL https://raw.githubusercontent.com/Tessie475/ghprofile/main/scripts/in
 [`scripts/install.sh`](scripts/install.sh) selects the right build for the platform, verifies its checksum against the release, and installs to `/usr/local/bin` or `~/.local/bin`.
 
 `GHPROFILE_BIN_DIR` sets the install directory, `GHPROFILE_VERSION` pins a version.
+
+</details>
+
+<details>
+<summary>Windows</summary>
+
+Download `ghprofile_<version>_windows_amd64.zip` from [the latest release](https://github.com/Tessie475/ghprofile/releases/latest), unpack it, and put `ghprofile.exe` somewhere on `PATH`.
+
+Needs `git` and `ssh-keygen`, both of which [Git for Windows](https://gitforwindows.org) provides.
 
 </details>
 
@@ -56,7 +65,7 @@ echo 'export PATH="$PATH:$(go env GOPATH)/bin"' >> ~/.zshrc && source ~/.zshrc
 
 </details>
 
-Requires `git` and `ssh-keygen`. Developed and tested on macOS. The Linux clipboard and browser paths exist but are unexercised.
+Requires `git` and `ssh-keygen`.
 
 ## Usage
 
