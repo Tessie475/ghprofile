@@ -499,3 +499,18 @@ could never fail on macOS or in CI, which is everywhere tests run. `isWindows`
 is now a package variable the test sets, so the Windows branch is exercised on
 every platform, and the test was confirmed to fail against the v0.2.5 code
 before being trusted.
+
+### Key permissions are not checked on Windows
+
+`Key.PermissionsOK` checks that no group or other bits are set, because OpenSSH
+refuses a private key readable by anyone else. On Windows those bits are
+meaningless: Go reports every writable file as `0666`, and `os.Chmod` can only
+toggle read-only. So every key looked too open, `apply` "fixed" it with a chmod
+that changed nothing, and `plan` never reported up to date. Found on a real
+machine, straight after a successful `apply`.
+
+Windows protects keys with ACLs, which `ssh-keygen` sets correctly. ghprofile
+does not inspect ACLs; doing so needs `golang.org/x/sys/windows` and the keys it
+generates are already right. `unixPermissions` is a variable so the Windows
+branch is tested on every platform, and the test was confirmed to fail against
+the old code.

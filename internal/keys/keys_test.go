@@ -452,3 +452,23 @@ func keygenPEM(t *testing.T, path, passphrase string) {
 		t.Fatalf("ssh-keygen -m PEM: %v\n%s", err, out)
 	}
 }
+
+// On Windows every writable file reports 0666, so the Unix check flagged keys
+// as too open on every run and apply never converged. Observed on a real
+// machine: "fix permissions" listed again straight after a successful apply.
+func TestPermissionsOK_WindowsIgnoresModeBits(t *testing.T) {
+	saved := unixPermissions
+	t.Cleanup(func() { unixPermissions = saved })
+
+	k := Key{HasPrivate: true, Mode: 0o666}
+
+	unixPermissions = false
+	if !k.PermissionsOK() {
+		t.Error("a 0666 key on Windows was reported as too open; the mode bits mean nothing there")
+	}
+
+	unixPermissions = true
+	if k.PermissionsOK() {
+		t.Error("a 0666 key on Unix was reported as fine; OpenSSH would refuse it")
+	}
+}

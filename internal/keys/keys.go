@@ -12,6 +12,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 
 	"github.com/Tessie475/ghprofile/internal/shell"
@@ -50,8 +51,19 @@ func (k Key) Orphaned() bool { return k.HasPublic && !k.HasPrivate }
 // Complete reports that both halves are present.
 func (k Key) Complete() bool { return k.HasPrivate && k.HasPublic }
 
+// unixPermissions is false on Windows, where the mode bits say nothing about
+// who can read a key. Go reports every writable file as 0666 and os.Chmod can
+// only toggle read-only, so checking them reported a key as too open on every
+// run and "fixed" it with a chmod that changed nothing. Windows protects keys
+// with ACLs, which ssh-keygen sets correctly. A variable rather than a direct
+// runtime.GOOS check, so tests on any platform can exercise the Windows branch.
+var unixPermissions = runtime.GOOS != "windows"
+
 // PermissionsOK reports whether the private key is tight enough for OpenSSH.
 func (k Key) PermissionsOK() bool {
+	if !unixPermissions {
+		return true
+	}
 	return !k.HasPrivate || k.Mode.Perm()&0o077 == 0
 }
 
