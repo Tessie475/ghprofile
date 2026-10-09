@@ -43,7 +43,7 @@ curl -sSfL https://raw.githubusercontent.com/Tessie475/ghprofile/main/scripts/in
 <summary>Windows</summary>
 
 ```
-https://github.com/Tessie475/ghprofile/releases/download/v0.2.5/ghprofile_0.2.5_windows_amd64.zip
+https://github.com/Tessie475/ghprofile/releases/download/v0.2.6/ghprofile_0.2.6_windows_amd64.zip
 ```
 
 Unpack it and put `ghprofile.exe` on your `PATH`.

@@ -40,7 +40,7 @@ func RenderDefault(f *config.Profiles, pa paths.Paths) string {
 
 	var b strings.Builder
 	b.WriteString("[include]\n")
-	fmt.Fprintf(&b, "\tpath = %s\n", pa.IdentityFile(d.Name))
+	fmt.Fprintf(&b, "\tpath = %s\n", gitPath(pa.IdentityFile(d.Name)))
 	return b.String()
 }
 
@@ -122,8 +122,13 @@ func HandWrittenEmail(content string) (string, bool) {
 // existing config shows C:\\Users\\you. Forward slashes avoid the question
 // entirely and git accepts them on every platform, including in gitdir:
 // patterns.
+// isWindows is a variable so tests on any platform can exercise the Windows
+// rendering. v0.2.5 shipped a test that only asserted when actually running on
+// Windows, so it could never fail where tests run, and it missed a block.
+var isWindows = runtime.GOOS == "windows"
+
 func gitPath(p string) string {
-	return toGitPath(p, runtime.GOOS == "windows")
+	return toGitPath(p, isWindows)
 }
 
 // toGitPath takes the platform as an argument so the conversion is testable

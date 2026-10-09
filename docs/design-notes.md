@@ -488,3 +488,14 @@ greeting could name an account the key under test has nothing to do with.
 
 `add` now reports only the count and points at `keys`, rather than vouching for
 a filename it cannot vouch for.
+
+v0.2.5 shipped this fix incomplete. The default-identity block, which is line 3
+of the file and therefore the exact line git rejected, still wrote the raw path.
+The edit to it had matched nothing because of an indentation difference, and
+the script reported success anyway.
+
+The test meant to catch it only asserted when `runtime.GOOS == "windows"`, so it
+could never fail on macOS or in CI, which is everywhere tests run. `isWindows`
+is now a package variable the test sets, so the Windows branch is exercised on
+every platform, and the test was confirmed to fail against the v0.2.5 code
+before being trusted.

@@ -1,7 +1,6 @@
 package gitconfig
 
 import (
-	"runtime"
 	"strings"
 	"testing"
 
@@ -187,9 +186,14 @@ func TestToGitPath(t *testing.T) {
 	}
 }
 
-// The whole file has to parse, so this asserts the rendered block contains no
-// single backslash at all when the paths are Windows-shaped.
+// Every path in both blocks must be git-safe when rendered for Windows. This
+// forces the Windows branch rather than waiting to run on Windows, because the
+// version that waited never failed anywhere and let a raw path through.
 func TestRender_WindowsPathsCarryNoBackslashes(t *testing.T) {
+	saved := isWindows
+	isWindows = true
+	t.Cleanup(func() { isWindows = saved })
+
 	f := &config.Profiles{Version: config.Version, Profiles: []config.Profile{
 		{Name: "personal", Host: "github.com", Alias: "github-personal", Key: `C:\k\p`, Default: true,
 			User: config.User{Name: "A", Email: "a@example.com"}},
@@ -197,15 +201,17 @@ func TestRender_WindowsPathsCarryNoBackslashes(t *testing.T) {
 			Dirs: []string{`C:\Users\GOKU\test-work/`},
 			User: config.User{Name: "B", Email: "b@example.org"}},
 	}}
-
 	pa := paths.Default(`C:\Users\GOKU`)
-	for _, body := range []string{RenderDefault(f, pa), RenderIncludes(f, pa)} {
-		if !strings.Contains(body, `\`) {
-			continue
+
+	for name, body := range map[string]string{
+		"default block":  RenderDefault(f, pa),
+		"includes block": RenderIncludes(f, pa),
+	} {
+		if strings.Contains(body, `\`) {
+			t.Errorf("%s carries a backslash, which git rejects as a bad escape:\n%s", name, body)
 		}
-		// Only meaningful when the test runs on Windows, where gitPath acts.
-		if runtime.GOOS == "windows" {
-			t.Errorf("a backslash survived into the git config:\n%s", body)
+		if !strings.Contains(body, "C:/Users/GOKU") {
+			t.Errorf("%s does not contain the converted path:\n%s", name, body)
 		}
 	}
 }
